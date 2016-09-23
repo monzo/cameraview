@@ -54,5 +54,17 @@
             -->
             <enum name="redEye" value="4"/>
         </attr>
+        <!-- Video encoding bit rate in byte. -->
+        <attr name="videoEncodingBitRate"
+              format="integer"/>
+        <!-- Video frame rate. -->
+        <attr name="videoFrameRate"
+              format="integer"/>
+        <!-- Minimum video width. -->
+        <attr name="minVideoWidth"
+              format="integer"/>
+        <!-- Minimum video height. -->
+        <attr name="minVideoHeight"
+              format="integer"/>
     </declare-styleable>
 </resources>

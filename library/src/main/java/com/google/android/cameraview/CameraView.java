@@ -103,6 +103,10 @@ public class CameraView extends FrameLayout {
                 R.style.Widget_CameraView);
         mAdjustViewBounds = a.getBoolean(R.styleable.CameraView_android_adjustViewBounds, false);
         setFacing(a.getInt(R.styleable.CameraView_facing, FACING_BACK));
+        setVideoEncodingBitRate(a.getInt(R.styleable.CameraView_videoEncodingBitRate, 5000000));
+        setVideoFrameRate(a.getInt(R.styleable.CameraView_videoFrameRate, 30));
+        setMinVideoWidth(a.getInt(R.styleable.CameraView_minVideoWidth, 0));
+        setMinVideoHeight(a.getInt(R.styleable.CameraView_minVideoHeight, 0));
         String aspectRatio = a.getString(R.styleable.CameraView_aspectRatio);
         if (aspectRatio != null) {
             setAspectRatio(AspectRatio.parse(aspectRatio));
@@ -299,6 +303,71 @@ public class CameraView extends FrameLayout {
     }
 
     /**
+     * Sets the video recording bit rate for the camera.
+     *
+     * @param videoEncodingBitRate The the video recording bit rate.
+     */
+    void setVideoEncodingBitRate(int videoEncodingBitRate) {
+        mImpl.setVideoEncodingBitRate(videoEncodingBitRate);
+    }
+
+    /**
+     * Gets the video recording bit rate for the camera.
+     */
+    int getVideoEncodingBitRate() {
+        return mImpl.getVideoEncodingBitRate();
+    }
+
+    /**
+     * Sets the video recording frame rate for the camera.
+     *
+     * @param videoFrameRate The video recording frame rate.
+     */
+    void setVideoFrameRate(int videoFrameRate) {
+        mImpl.setVideoFrameRate(videoFrameRate);
+    }
+
+    /**
+     * Gets the video recording frame rate for the camera.
+     */
+    int getVideoFrameRate() {
+        return mImpl.getVideoFrameRate();
+    }
+
+    /**
+     * Sets the minimum video recording width in pixels.
+     *
+     * @param minVideoWidth The minimum video recording width in pixels.
+     */
+    void setMinVideoWidth(int minVideoWidth) {
+        mImpl.setMinVideoWidth(minVideoWidth);
+    }
+
+    /**
+     * Gets the minimum video recording width in pixels.
+     */
+    int getMinVideoWidth() {
+        return mImpl.getMinVideoWidth();
+    }
+
+    /**
+     * Sets the minimum video recording height in pixels.
+     *
+     * @param minVideoHeight The minimum video recording height in pixels.
+     */
+    void setMinVideoHeight(int minVideoHeight) {
+        mImpl.setMinVideoHeight(minVideoHeight);
+    }
+
+
+    /**
+     * Gets the minimum video recording height in pixels.
+     */
+    int getMinVideoHeight() {
+        return mImpl.getMinVideoHeight();
+    }
+
+    /**
      * Gets all the aspect ratios supported by the current camera.
      */
     public Set<AspectRatio> getSupportedAspectRatios() {
@@ -363,6 +432,22 @@ public class CameraView extends FrameLayout {
     public int getFlash() {
         //noinspection WrongConstant
         return mImpl.getFlash();
+    }
+
+    /**
+     * Start recording a video.
+     *
+     * @param videoFilePath File path where the video will be stored.
+     */
+    public void startRecordingVideo(String videoFilePath) {
+        mImpl.startRecordingVideo(videoFilePath);
+    }
+
+    /**
+     * Stop video recording.
+     */
+    public void stopRecordingVideo() {
+        mImpl.stopRecordingVideo();
     }
 
     /**

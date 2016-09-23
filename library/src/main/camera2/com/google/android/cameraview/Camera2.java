@@ -32,6 +32,7 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.media.MediaRecorder;
 import android.os.Build;
 import android.support.annotation.NonNull;
 import android.util.Log;
@@ -39,8 +40,14 @@ import android.util.SparseIntArray;
 import android.view.Surface;
 import android.view.TextureView;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
 
@@ -59,6 +66,8 @@ class Camera2 extends CameraViewImpl {
     }
 
     private final CameraManager mCameraManager;
+
+    private MediaRecorder mMediaRecorder;
 
     private final TextureView.SurfaceTextureListener mSurfaceTextureListener
             = new TextureView.SurfaceTextureListener() {
@@ -128,10 +137,14 @@ class Camera2 extends CameraViewImpl {
             mCaptureSession = session;
             updateAutoFocus();
             updateFlash();
+            if (mStartVideoRecording) {
+                mStartVideoRecording = false;
+                mMediaRecorder.start();
+            }
             try {
                 mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(),
                         mCaptureCallback, null);
-            } catch (CameraAccessException e) {
+            } catch (CameraAccessException | IllegalStateException e) {
                 Log.e(TAG, "Failed to start camera preview.", e);
             }
         }
@@ -218,6 +231,20 @@ class Camera2 extends CameraViewImpl {
 
     private int mDisplayOrientation;
 
+    private boolean mStartVideoRecording = false;
+
+    private String mVideoFilePath;
+
+    private android.util.Size mVideoSize;
+
+    private int mVideoEncodingBitRate;
+
+    private int mVideoFrameRate;
+
+    private int mMinVideoWidth;
+
+    private int mMinVideoHeight;
+
     public Camera2(Callback callback, Context context) {
         super(callback);
         mCameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
@@ -250,11 +277,55 @@ class Camera2 extends CameraViewImpl {
             mImageReader.close();
             mImageReader = null;
         }
+        if (null != mMediaRecorder) {
+            mMediaRecorder.release();
+            mMediaRecorder = null;
+        }
     }
 
     @Override
     boolean isCameraOpened() {
         return mCamera != null;
+    }
+
+    @Override
+    void setVideoEncodingBitRate(int videoEncodingBitRate) {
+        mVideoEncodingBitRate = videoEncodingBitRate;
+    }
+
+    @Override
+    int getVideoEncodingBitRate() {
+        return mVideoEncodingBitRate;
+    }
+
+    @Override
+    void setVideoFrameRate(int videoFrameRate) {
+        mVideoFrameRate = videoFrameRate;
+    }
+
+    @Override
+    int getVideoFrameRate() {
+        return mVideoFrameRate;
+    }
+
+    @Override
+    void setMinVideoWidth(int minVideoWidth) {
+        mMinVideoWidth = minVideoWidth;
+    }
+
+    @Override
+    int getMinVideoWidth() {
+        return mMinVideoWidth;
+    }
+
+    @Override
+    void setMinVideoHeight(int minVideoHeight) {
+        mMinVideoHeight = minVideoHeight;
+    }
+
+    @Override
+    int getMinVideoHeight() {
+        return mMinVideoHeight;
     }
 
     @Override
@@ -362,6 +433,56 @@ class Camera2 extends CameraViewImpl {
         configureTransform();
     }
 
+    @Override
+    public void startRecordingVideo(String videoFilePath) {
+        mVideoFilePath = videoFilePath;
+        if (!isCameraOpened()) {
+            return;
+        }
+        try {
+            mStartVideoRecording = true;
+            setUpMediaRecorder();
+            startCaptureSession();
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to start video recording.", e);
+        }
+    }
+
+    @Override
+    public void stopRecordingVideo() {
+        mStartVideoRecording = false;
+        try {
+            mCaptureSession.stopRepeating();
+            mCaptureSession.abortCaptures();
+        } catch (CameraAccessException e) {
+            Log.e(TAG, "Failed to stop video recording.", e);
+        }
+        try {
+            mMediaRecorder.stop();
+        } catch(RuntimeException e) {
+            Log.e(TAG, "Failed to stop video recording.", e);
+            //noinspection ResultOfMethodCallIgnored
+            new File(mVideoFilePath).delete();
+        } finally {
+            mMediaRecorder.reset();
+        }
+        startCaptureSession();
+    }
+
+    private void setUpMediaRecorder() throws IOException {
+        mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+        mMediaRecorder.setOutputFile(mVideoFilePath);
+        mMediaRecorder.setVideoEncodingBitRate(mVideoEncodingBitRate);
+        mMediaRecorder.setVideoFrameRate(mVideoFrameRate);
+        mMediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
+        mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+        mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        mMediaRecorder.setOrientationHint(getCameraOrientation());
+        mMediaRecorder.prepare();
+    }
+
     /**
      * Chooses a camera ID by the specified camera facing ({@link #mFacing}).
      *
@@ -457,6 +578,7 @@ class Camera2 extends CameraViewImpl {
      */
     private void startOpeningCamera() {
         try {
+            mMediaRecorder = new MediaRecorder();
             mCameraManager.openCamera(mCameraId, mCameraDeviceCallback, null);
         } catch (CameraAccessException e) {
             throw new RuntimeException("Failed to open camera: " + mCameraId, e);
@@ -478,12 +600,48 @@ class Camera2 extends CameraViewImpl {
         mSurfaceInfo.surface.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
         Surface surface = new Surface(mSurfaceInfo.surface);
         try {
+            CameraCharacteristics characteristics = mCameraManager.getCameraCharacteristics(mCameraId);
+            StreamConfigurationMap map = characteristics
+                    .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            @SuppressWarnings("ConstantConditions")
+            android.util.Size[] supportedOutputSizes = map.getOutputSizes(MediaRecorder.class);
+            mVideoSize = chooseVideoSize(supportedOutputSizes, mMinVideoWidth, mMinVideoHeight);
             mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mPreviewRequestBuilder.addTarget(surface);
-            mCamera.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
-                    mSessionCallback, null);
+            if (mStartVideoRecording) {
+                mPreviewRequestBuilder.addTarget(mMediaRecorder.getSurface());
+                mCamera.createCaptureSession(Arrays.asList(surface, mMediaRecorder.getSurface()),
+                                             mSessionCallback, null);
+            } else {
+                mCamera.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
+                                             mSessionCallback, null);
+            }
         } catch (CameraAccessException e) {
             throw new RuntimeException("Failed to start camera session");
+        }
+    }
+
+    private android.util.Size chooseVideoSize(android.util.Size[] choices, int width, int height) {
+        if(choices == null || choices.length == 0) {
+            throw new RuntimeException("Failed to start video recording session. Camera didn't return any output sizes.");
+        }
+        List<android.util.Size> bigEnough = new ArrayList<>();
+        for (android.util.Size option : choices) {
+            if (option.getWidth() >= width && option.getHeight() >= height) {
+                bigEnough.add(option);
+            }
+        }
+
+        if (bigEnough.size() > 0) {
+            return Collections.min(bigEnough, new Comparator<android.util.Size>() {
+                @Override
+                public int compare(android.util.Size size1, android.util.Size size2) {
+                    return Integer.compare(size1.getWidth() * size1.getHeight(), size2.getWidth() * size2.getHeight());
+                }
+            });
+        } else {
+            Log.e(TAG, "Couldn't find any suitable video recording size");
+            return choices[0];
         }
     }
 
@@ -660,13 +818,7 @@ class Camera2 extends CameraViewImpl {
                     break;
             }
             // Calculate JPEG orientation.
-            @SuppressWarnings("ConstantConditions")
-            int sensorOrientation = mCameraCharacteristics.get(
-                    CameraCharacteristics.SENSOR_ORIENTATION);
-            captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION,
-                    (sensorOrientation +
-                            mDisplayOrientation * (mFacing == Constants.FACING_FRONT ? 1 : -1) +
-                            360) % 360);
+            captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, getCameraOrientation());
             // Stop preview and capture a still picture.
             mCaptureSession.stopRepeating();
             mCaptureSession.capture(captureRequestBuilder.build(),
@@ -681,6 +833,13 @@ class Camera2 extends CameraViewImpl {
         } catch (CameraAccessException e) {
             Log.e(TAG, "Cannot capture a still picture.", e);
         }
+    }
+
+    private int getCameraOrientation() {
+        @SuppressWarnings("ConstantConditions")
+        int sensorOrientation = mCameraCharacteristics.get(
+                CameraCharacteristics.SENSOR_ORIENTATION);
+        return (sensorOrientation + mDisplayOrientation * (mFacing == Constants.FACING_FRONT ? 1 : -1) + 360) % 360;
     }
 
     /**

@@ -41,6 +41,22 @@ abstract class CameraViewImpl {
 
     abstract int getFacing();
 
+    abstract void setVideoEncodingBitRate(int videoEncodingBitRate);
+
+    abstract int getVideoEncodingBitRate();
+
+    abstract void setVideoFrameRate(int videoFrameRate);
+
+    abstract int getVideoFrameRate();
+
+    abstract void setMinVideoWidth(int minVideoWidth);
+
+    abstract int getMinVideoWidth();
+
+    abstract void setMinVideoHeight(int minVideoHeight);
+
+    abstract int getMinVideoHeight();
+
     abstract Set<AspectRatio> getSupportedAspectRatios();
 
     abstract void setAspectRatio(AspectRatio ratio);
@@ -58,6 +74,10 @@ abstract class CameraViewImpl {
     abstract void takePicture();
 
     abstract void setDisplayOrientation(int displayOrientation);
+
+    public abstract void startRecordingVideo(String videoFilePath);
+
+    public abstract void stopRecordingVideo();
 
     interface Callback {
 
