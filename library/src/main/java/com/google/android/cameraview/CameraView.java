@@ -20,7 +20,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Matrix;
-import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.annotation.IntDef;
@@ -94,11 +93,7 @@ public class CameraView extends FrameLayout {
         super(context, attrs, defStyleAttr);
         // Internal setup
         mCallbacks = new CallbackBridge();
-        if (Build.VERSION.SDK_INT < 21) {
-            mImpl = new Camera1(mCallbacks);
-        } else {
-            mImpl = new Camera2(mCallbacks, context);
-        }
+        mImpl = new Camera2(mCallbacks, context);
         // View content
         inflate(context, R.layout.camera_view, this);
         mTextureView = (TextureView) findViewById(R.id.texture_view);
