@@ -156,7 +156,9 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onClosed(@NonNull CameraCaptureSession session) {
-            mCaptureSession = null;
+            if (mCaptureSession != null && mCaptureSession.equals(session)) {
+                mCaptureSession = null;
+            }
         }
 
     };
