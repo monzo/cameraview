@@ -619,7 +619,7 @@ class Camera2 extends CameraViewImpl {
                                              mSessionCallback, null);
             }
         } catch (CameraAccessException e) {
-            throw new RuntimeException("Failed to start camera session");
+            throw new RuntimeException("Failed to start camera session", e);
         }
     }
 
