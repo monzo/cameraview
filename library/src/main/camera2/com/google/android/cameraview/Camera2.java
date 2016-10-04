@@ -34,6 +34,8 @@ import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.util.Log;
 import android.util.SparseIntArray;
@@ -613,10 +615,10 @@ class Camera2 extends CameraViewImpl {
             if (mStartVideoRecording) {
                 mPreviewRequestBuilder.addTarget(mMediaRecorder.getSurface());
                 mCamera.createCaptureSession(Arrays.asList(surface, mMediaRecorder.getSurface()),
-                                             mSessionCallback, null);
+                                             mSessionCallback, new Handler(Looper.getMainLooper()));
             } else {
                 mCamera.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
-                                             mSessionCallback, null);
+                                             mSessionCallback, new Handler(Looper.getMainLooper()));
             }
         } catch (CameraAccessException e) {
             throw new RuntimeException("Failed to start camera session");
