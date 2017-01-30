@@ -142,6 +142,7 @@ class Camera2 extends CameraViewImpl {
             if (mStartVideoRecording) {
                 mStartVideoRecording = false;
                 mMediaRecorder.start();
+                mRecording = true;
             }
             try {
                 mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(),
@@ -237,6 +238,8 @@ class Camera2 extends CameraViewImpl {
 
     private boolean mStartVideoRecording = false;
 
+    private boolean mRecording = false;
+
     private String mVideoFilePath;
 
     private android.util.Size mVideoSize;
@@ -285,6 +288,7 @@ class Camera2 extends CameraViewImpl {
             mMediaRecorder.release();
             mMediaRecorder = null;
         }
+        mRecording = false;
     }
 
     @Override
@@ -438,7 +442,7 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
-    public void startRecordingVideo(String videoFilePath) {
+    void startRecordingVideo(String videoFilePath) {
         mVideoFilePath = videoFilePath;
         if (!isCameraOpened()) {
             return;
@@ -453,7 +457,7 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
-    public void stopRecordingVideo() {
+    void stopRecordingVideo() {
         mStartVideoRecording = false;
         try {
             mCaptureSession.stopRepeating();
@@ -462,6 +466,7 @@ class Camera2 extends CameraViewImpl {
             Log.e(TAG, "Failed to stop video recording.", e);
         }
         try {
+            mRecording = false;
             mMediaRecorder.stop();
         } catch(RuntimeException e) {
             Log.e(TAG, "Failed to stop video recording.", e);
@@ -471,6 +476,11 @@ class Camera2 extends CameraViewImpl {
             mMediaRecorder.reset();
         }
         startCaptureSession();
+    }
+
+    @Override
+    boolean isRecordingVideo() {
+        return mRecording;
     }
 
     private void setUpMediaRecorder() throws IOException {

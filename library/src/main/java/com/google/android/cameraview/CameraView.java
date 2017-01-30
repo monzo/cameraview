@@ -451,6 +451,13 @@ public class CameraView extends FrameLayout {
     }
 
     /**
+     * Whether or not is currently recording video with the MediaRecorder
+     */
+    public boolean isRecordingVideo() {
+        return mImpl.isRecordingVideo();
+    }
+
+    /**
      * Take a picture. The result will be returned to
      * {@link Callback#onPictureTaken(CameraView, byte[])}.
      */
