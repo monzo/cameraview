@@ -75,9 +75,11 @@ abstract class CameraViewImpl {
 
     abstract void setDisplayOrientation(int displayOrientation);
 
-    public abstract void startRecordingVideo(String videoFilePath);
+    abstract void startRecordingVideo(String videoFilePath);
 
-    public abstract void stopRecordingVideo();
+    abstract void stopRecordingVideo();
+
+    abstract boolean isRecordingVideo();
 
     interface Callback {
 
