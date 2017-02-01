@@ -35,6 +35,7 @@ import android.media.ImageReader;
 import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.support.annotation.NonNull;
 import android.util.Log;
@@ -117,12 +118,14 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onDisconnected(@NonNull CameraDevice camera) {
+            camera.close();
             mCamera = null;
         }
 
         @Override
         public void onError(@NonNull CameraDevice camera, int error) {
             Log.e(TAG, "onError: " + camera.getId() + " (" + error + ")");
+            camera.close();
             mCamera = null;
         }
 
@@ -139,17 +142,22 @@ class Camera2 extends CameraViewImpl {
             mCaptureSession = session;
             updateAutoFocus();
             updateFlash();
-            if (mStartVideoRecording) {
-                mStartVideoRecording = false;
-                mMediaRecorder.start();
-                mRecording = true;
-            }
-            try {
-                mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(),
-                        mCaptureCallback, null);
-            } catch (CameraAccessException | IllegalStateException e) {
-                Log.e(TAG, "Failed to start camera preview.", e);
-            }
+
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    if (mStartVideoRecording) {
+                        mStartVideoRecording = false;
+                        mMediaRecorder.start();
+                        mRecording = true;
+                    }
+                    try {
+                        mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), mCaptureCallback, null);
+                    } catch (CameraAccessException | IllegalStateException e) {
+                        Log.e(TAG, "Failed to start camera preview.", e);
+                    }
+                }
+            });
         }
 
         @Override
@@ -252,6 +260,10 @@ class Camera2 extends CameraViewImpl {
 
     private int mMinVideoHeight;
 
+    private HandlerThread mBackgroundThread;
+
+    private Handler mBackgroundHandler;
+
     public Camera2(Callback callback, Context context) {
         super(callback);
         mCameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
@@ -264,6 +276,7 @@ class Camera2 extends CameraViewImpl {
 
     @Override
     void start() {
+        startBackgroundThread();
         chooseCameraIdByFacing();
         collectCameraInfo();
         prepareImageReader();
@@ -289,6 +302,25 @@ class Camera2 extends CameraViewImpl {
             mMediaRecorder = null;
         }
         mRecording = false;
+
+        stopBackgroundThread();
+    }
+
+    private void startBackgroundThread() {
+        mBackgroundThread = new HandlerThread("CameraBackground");
+        mBackgroundThread.start();
+        mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
+    }
+
+    private void stopBackgroundThread() {
+        mBackgroundThread.quitSafely();
+        try {
+            mBackgroundThread.join();
+            mBackgroundThread = null;
+            mBackgroundHandler = null;
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -460,12 +492,6 @@ class Camera2 extends CameraViewImpl {
     void stopRecordingVideo() {
         mStartVideoRecording = false;
         try {
-            mCaptureSession.stopRepeating();
-            mCaptureSession.abortCaptures();
-        } catch (CameraAccessException e) {
-            Log.e(TAG, "Failed to stop video recording.", e);
-        }
-        try {
             mRecording = false;
             mMediaRecorder.stop();
         } catch(RuntimeException e) {
@@ -475,7 +501,6 @@ class Camera2 extends CameraViewImpl {
         } finally {
             mMediaRecorder.reset();
         }
-        startCaptureSession();
     }
 
     @Override
@@ -625,10 +650,10 @@ class Camera2 extends CameraViewImpl {
             if (mStartVideoRecording) {
                 mPreviewRequestBuilder.addTarget(mMediaRecorder.getSurface());
                 mCamera.createCaptureSession(Arrays.asList(surface, mMediaRecorder.getSurface()),
-                                             mSessionCallback, new Handler(Looper.getMainLooper()));
+                                             mSessionCallback, mBackgroundHandler);
             } else {
                 mCamera.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
-                                             mSessionCallback, new Handler(Looper.getMainLooper()));
+                                             mSessionCallback, mBackgroundHandler);
             }
         } catch (CameraAccessException e) {
             throw new RuntimeException("Failed to start camera session");
