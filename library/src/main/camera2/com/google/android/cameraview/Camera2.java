@@ -285,10 +285,7 @@ class Camera2 extends CameraViewImpl {
 
     @Override
     void stop() {
-        if (mCaptureSession != null) {
-            mCaptureSession.close();
-            mCaptureSession = null;
-        }
+        closePreviewSession();
         if (mCamera != null) {
             mCamera.close();
             mCamera = null;
@@ -483,6 +480,7 @@ class Camera2 extends CameraViewImpl {
         }
         try {
             mStartVideoRecording = true;
+            closePreviewSession();
             setUpMediaRecorder();
             startCaptureSession();
         } catch (IOException e) {
@@ -508,6 +506,13 @@ class Camera2 extends CameraViewImpl {
     @Override
     boolean isRecordingVideo() {
         return mRecording;
+    }
+
+    private void closePreviewSession() {
+        if (mCaptureSession != null) {
+            mCaptureSession.close();
+            mCaptureSession = null;
+        }
     }
 
     private void setUpMediaRecorder() throws IOException {
@@ -647,13 +652,15 @@ class Camera2 extends CameraViewImpl {
             @SuppressWarnings("ConstantConditions")
             android.util.Size[] supportedOutputSizes = map.getOutputSizes(MediaRecorder.class);
             mVideoSize = chooseVideoSize(supportedOutputSizes, mMinVideoWidth, mMinVideoHeight);
-            mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            mPreviewRequestBuilder.addTarget(surface);
             if (mStartVideoRecording) {
+                mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
+                mPreviewRequestBuilder.addTarget(surface);
                 mPreviewRequestBuilder.addTarget(mMediaRecorder.getSurface());
                 mCamera.createCaptureSession(Arrays.asList(surface, mMediaRecorder.getSurface()),
                                              mSessionCallback, mBackgroundHandler);
             } else {
+                mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                mPreviewRequestBuilder.addTarget(surface);
                 mCamera.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
                                              mSessionCallback, mBackgroundHandler);
             }
