@@ -54,16 +54,24 @@ class SizeMap {
         return true;
     }
 
-    public Set<AspectRatio> ratios() {
+    /**
+     * Removes the specified aspect ratio and all sizes associated with it.
+     *
+     * @param ratio The aspect ratio to be removed.
+     */
+    public void remove(AspectRatio ratio) {
+        mRatios.remove(ratio);
+    }
+
+    Set<AspectRatio> ratios() {
         return mRatios.keySet();
     }
 
-    public SortedSet<Size> sizes(AspectRatio ratio) {
+    SortedSet<Size> sizes(AspectRatio ratio) {
         return mRatios.get(ratio);
     }
 
-    public void clear() {
+    void clear() {
         mRatios.clear();
     }
-
 }
