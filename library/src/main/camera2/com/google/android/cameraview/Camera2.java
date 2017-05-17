@@ -68,6 +68,16 @@ class Camera2 extends CameraViewImpl {
         INTERNAL_FACINGS.put(Constants.FACING_FRONT, CameraCharacteristics.LENS_FACING_FRONT);
     }
 
+    /**
+     * Max preview width that is guaranteed by Camera2 API
+     */
+    private static final int MAX_PREVIEW_WIDTH = 1920;
+
+    /**
+     * Max preview height that is guaranteed by Camera2 API
+     */
+    private static final int MAX_PREVIEW_HEIGHT = 1080;
+
     private final CameraManager mCameraManager;
 
     private MediaRecorder mMediaRecorder;
@@ -586,27 +596,28 @@ class Camera2 extends CameraViewImpl {
         }
         mPreviewSizes.clear();
         for (android.util.Size size : map.getOutputSizes(SurfaceTexture.class)) {
-            mPreviewSizes.add(new Size(size.getWidth(), size.getHeight()));
-        }
-        mPictureSizes.clear();
-        // try to get hi-res output sizes for Marshmellow and higher
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-             android.util.Size[] outputSizes = map.getHighResolutionOutputSizes(ImageFormat.JPEG);
-            if (outputSizes != null) {
-                for (android.util.Size size : map.getHighResolutionOutputSizes(ImageFormat.JPEG)) {
-                    mPictureSizes.add(new Size(size.getWidth(), size.getHeight()));
-                }
+            int width = size.getWidth();
+            int height = size.getHeight();
+            if (width <= MAX_PREVIEW_WIDTH && height <= MAX_PREVIEW_HEIGHT) {
+                mPreviewSizes.add(new Size(width, height));
             }
         }
-        // fallback camera sizes and lower than Marshmellow
-        if (mPictureSizes.ratios().size() == 0) {
-            for (android.util.Size size : map.getOutputSizes(ImageFormat.JPEG)) {
-                mPictureSizes.add(new Size(size.getWidth(), size.getHeight()));
+        mPictureSizes.clear();
+        collectPictureSizes(map);
+        for (AspectRatio ratio : mPreviewSizes.ratios()) {
+            if (!mPictureSizes.ratios().contains(ratio)) {
+                mPreviewSizes.remove(ratio);
             }
         }
 
         if (!mPreviewSizes.ratios().contains(mAspectRatio)) {
             mAspectRatio = mPreviewSizes.ratios().iterator().next();
+        }
+    }
+
+    private void collectPictureSizes(StreamConfigurationMap map) {
+        for (android.util.Size size : map.getOutputSizes(ImageFormat.JPEG)) {
+            mPictureSizes.add(new Size(size.getWidth(), size.getHeight()));
         }
     }
 
