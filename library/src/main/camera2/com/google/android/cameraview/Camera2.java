@@ -400,17 +400,18 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
-    void setAspectRatio(AspectRatio ratio) {
+    boolean setAspectRatio(AspectRatio ratio) {
         if (ratio == null || ratio.equals(mAspectRatio) ||
                 !mPreviewSizes.ratios().contains(ratio)) {
             // TODO: Better error handling
-            return;
+            return false;
         }
         mAspectRatio = ratio;
         if (mCaptureSession != null) {
             mCaptureSession.close();
             startCaptureSession();
         }
+        return true;
     }
 
     @Override
