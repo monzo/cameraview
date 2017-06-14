@@ -407,8 +407,10 @@ class Camera2 extends CameraViewImpl {
             return false;
         }
         mAspectRatio = ratio;
+        prepareImageReader();
         if (mCaptureSession != null) {
             mCaptureSession.close();
+            mCaptureSession = null;
             startCaptureSession();
         }
         return true;
@@ -616,13 +618,16 @@ class Camera2 extends CameraViewImpl {
         }
     }
 
-    private void collectPictureSizes(StreamConfigurationMap map) {
+    protected void collectPictureSizes(StreamConfigurationMap map) {
         for (android.util.Size size : map.getOutputSizes(ImageFormat.JPEG)) {
             mPictureSizes.add(new Size(size.getWidth(), size.getHeight()));
         }
     }
 
     private void prepareImageReader() {
+        if (mImageReader != null) {
+            mImageReader.close();
+        }
         Size largest = mPictureSizes.sizes(mAspectRatio).last();
         mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
                 ImageFormat.JPEG, /* maxImages */ 2);
@@ -651,7 +656,7 @@ class Camera2 extends CameraViewImpl {
      * <p>The result will be continuously processed in {@link #mSessionCallback}.</p>
      */
     private void startCaptureSession() {
-        if (!isCameraOpened() || mSurfaceInfo.surface == null) {
+        if (!isCameraOpened() || mSurfaceInfo.surface == null || mImageReader == null) {
             return;
         }
         Size previewSize = chooseOptimalSize();
