@@ -45,6 +45,11 @@ public class Size implements Comparable<Size> {
         return mHeight;
     }
 
+    public long getArea() {
+        // We cast here to ensure the multiplications won't overflow
+        return (long) mWidth * mHeight;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (o == null) {

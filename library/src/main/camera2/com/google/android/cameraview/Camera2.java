@@ -38,6 +38,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.util.Log;
 import android.util.SparseIntArray;
 import android.view.Surface;
@@ -401,9 +402,13 @@ class Camera2 extends CameraViewImpl {
 
     @Override
     boolean setAspectRatio(AspectRatio ratio) {
-        if (ratio == null || ratio.equals(mAspectRatio) ||
-                !mPreviewSizes.ratios().contains(ratio)) {
+        if (ratio.equals(mAspectRatio)) {
             // TODO: Better error handling
+            return false;
+        }
+        if (!mPreviewSizes.ratios().contains(ratio)) {
+            // An appropriate aspect ratio gets calculated in the collectCameraInfo() method once we have more info about the camera capabilities
+            mAspectRatio = null;
             return false;
         }
         mAspectRatio = ratio;
@@ -417,6 +422,7 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
+    @Nullable
     AspectRatio getAspectRatio() {
         return mAspectRatio;
     }
@@ -613,6 +619,13 @@ class Camera2 extends CameraViewImpl {
             }
         }
 
+        // Get the aspect ratio of the largest available picture size that the camera sensor supports (rather than using the preview size)
+        // (This is necessary on some phones – e.g. Galaxy S5 w/ 4:3 – where the preview size ratio is supposedly supported but still appears stretched)
+        if (mAspectRatio == null) {
+            final Size largest = mPictureSizes.largest();
+            mAspectRatio = AspectRatio.of(largest.getWidth(), largest.getHeight());
+        }
+
         if (!mPreviewSizes.ratios().contains(mAspectRatio)) {
             mAspectRatio = mPreviewSizes.ratios().iterator().next();
         }
@@ -687,7 +700,7 @@ class Camera2 extends CameraViewImpl {
     }
 
     private android.util.Size chooseVideoSize(android.util.Size[] choices, int width, int height) {
-        if(choices == null || choices.length == 0) {
+        if (choices == null || choices.length == 0) {
             throw new RuntimeException("Failed to start video recording session. Camera didn't return any output sizes.");
         }
         List<android.util.Size> bigEnough = new ArrayList<>();

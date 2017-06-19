@@ -17,7 +17,10 @@
 package com.google.android.cameraview;
 
 import android.support.v4.util.ArrayMap;
+import android.support.v4.util.ArraySet;
 
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -71,7 +74,26 @@ class SizeMap {
         return mRatios.get(ratio);
     }
 
+    Size largest() {
+        Set<Size> allSizes = new ArraySet<>();
+        for (SortedSet<Size> sizes: mRatios.values()) {
+            allSizes.addAll(sizes);
+        }
+        return Collections.max(allSizes, new CompareSizesByArea());
+    }
+
     void clear() {
         mRatios.clear();
+    }
+
+    /**
+     * Compares two {@code Size}s based on their areas.
+     */
+    private static class CompareSizesByArea implements Comparator<Size> {
+
+        @Override
+        public int compare(Size lhs, Size rhs) {
+            return Long.signum(lhs.getArea() - rhs.getArea());
+        }
     }
 }
