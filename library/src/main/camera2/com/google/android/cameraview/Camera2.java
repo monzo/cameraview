@@ -20,15 +20,18 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.MeteringRectangle;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
@@ -58,7 +61,7 @@ import java.util.SortedSet;
 
 @SuppressWarnings("MissingPermission")
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-class Camera2 extends CameraViewImpl {
+class Camera2 extends CameraViewImpl implements TapFocusable {
 
     private static final String TAG = "Camera2";
 
@@ -78,6 +81,8 @@ class Camera2 extends CameraViewImpl {
      * Max preview height that is guaranteed by Camera2 API
      */
     private static final int MAX_PREVIEW_HEIGHT = 1080;
+
+    private static final int TAP_FOCUS_TARGET_SIZE = 100;
 
     private final CameraManager mCameraManager;
 
@@ -199,6 +204,11 @@ class Camera2 extends CameraViewImpl {
             } catch (CameraAccessException e) {
                 Log.e(TAG, "Failed to run precapture sequence.", e);
             }
+        }
+
+        @Override
+        public void onFocused() {
+            updateAutoFocus();
         }
 
         @Override
@@ -791,12 +801,9 @@ class Camera2 extends CameraViewImpl {
         if (mAutoFocus) {
             int[] modes = mCameraCharacteristics.get(
                     CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES);
-            Integer level = mCameraCharacteristics.get(
-                    CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
             // Auto focus is not supported
             if (modes == null || modes.length == 0
-                    || (modes.length == 1 && modes[0] == CameraCharacteristics.CONTROL_AF_MODE_OFF)
-                    || level == null || level == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY) {
+                    || (modes.length == 1 && modes[0] == CameraCharacteristics.CONTROL_AF_MODE_OFF)) {
                 mAutoFocus = false;
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
                         CaptureRequest.CONTROL_AF_MODE_OFF);
@@ -944,6 +951,40 @@ class Camera2 extends CameraViewImpl {
         }
     }
 
+    @Override
+    public void setFocusTarget(int x, int y) {
+        final Rect sensorArraySize = mCameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+        // References: http://www.morethantechnical.com/2017/02/28/android-camera2-touch-to-focus/
+        // TODO take into account sensor orientation
+        final int sensorCenterY = (int) ((x / (float) mSurfaceInfo.width)
+                * (float) sensorArraySize.height());
+        final int sensorCenterX = (int) ((y / (float) mSurfaceInfo.height)
+                * (float) sensorArraySize.width());
+        // touch size in pixel. Values range in [3, 10]...
+        MeteringRectangle focusAreaTouch = new MeteringRectangle(
+                Math.max(sensorCenterX - (TAP_FOCUS_TARGET_SIZE / 2), 0),
+                Math.max(sensorCenterY - (TAP_FOCUS_TARGET_SIZE / 2), 0),
+                TAP_FOCUS_TARGET_SIZE,
+                TAP_FOCUS_TARGET_SIZE,
+                MeteringRectangle.METERING_WEIGHT_MAX - 1);
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                                   CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_REGIONS,
+                                   new MeteringRectangle[]{focusAreaTouch});
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                                   CaptureRequest.CONTROL_AF_MODE_AUTO);
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                                   CameraMetadata.CONTROL_AF_TRIGGER_START);
+
+        if (mCaptureSession != null) {
+            try {
+                mCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback, null);
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     /**
      * A {@link CameraCaptureSession.CaptureCallback} for capturing a still picture.
      */
@@ -1014,6 +1055,16 @@ class Camera2 extends CameraViewImpl {
                     }
                     break;
                 }
+                case STATE_PREVIEW: {
+                    Integer af = result.get(CaptureResult.CONTROL_AF_STATE);
+                    if (af == null) {
+                        break;
+                    }
+                    if (af == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED) { // TODO: 20/06/2017 Make sure this works and resets to continuous focus
+                        onFocused(); // TODO: 20/06/2017 Maybe this also needs to happen at a fixed interval after a tap if this state detection doesn't cover all cases and is not sufficient/just to make sure?
+                    }
+                    break;
+                }
             }
         }
 
@@ -1026,6 +1077,8 @@ class Camera2 extends CameraViewImpl {
          * Called when it is necessary to run the precapture sequence.
          */
         public abstract void onPrecaptureRequired();
+
+        public abstract void onFocused();
 
     }
 

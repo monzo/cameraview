@@ -28,6 +28,7 @@ import android.support.annotation.Nullable;
 import android.support.v4.os.ParcelableCompat;
 import android.support.v4.os.ParcelableCompatCreatorCallbacks;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.TextureView;
 import android.widget.FrameLayout;
 
@@ -215,6 +216,23 @@ public class CameraView extends FrameLayout {
         setAspectRatio(ss.ratio);
         setAutoFocus(ss.autoFocus);
         setFlash(ss.flash);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        final int actionMasked = event.getActionMasked();
+        if (actionMasked != MotionEvent.ACTION_DOWN) {
+            return false;
+        }
+
+        final int x = (int) event.getX();
+        final int y = (int) event.getY();
+        if (mImpl instanceof TapFocusable) {
+            ((TapFocusable) mImpl).setFocusTarget(x, y);
+            return true;
+        }
+
+        return super.onTouchEvent(event);
     }
 
     /**
