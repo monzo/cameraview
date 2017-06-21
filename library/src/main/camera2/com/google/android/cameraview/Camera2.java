@@ -20,18 +20,15 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
-import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
-import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
-import android.hardware.camera2.params.MeteringRectangle;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
@@ -61,7 +58,7 @@ import java.util.SortedSet;
 
 @SuppressWarnings("MissingPermission")
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-class Camera2 extends CameraViewImpl implements TapFocusable {
+class Camera2 extends CameraViewImpl {
 
     private static final String TAG = "Camera2";
 
@@ -82,7 +79,7 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
      */
     private static final int MAX_PREVIEW_HEIGHT = 1080;
 
-    private static final int TAP_FOCUS_TARGET_SIZE = 100;
+    private static final int MAX_LOCK_FOCUS_ATTEMPTS = 3;
 
     private final CameraManager mCameraManager;
 
@@ -207,13 +204,14 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
         }
 
         @Override
-        public void onFocused() {
-            updateAutoFocus();
-        }
-
-        @Override
         public void onReady() {
             captureStillPicture();
+        }
+
+
+        @Override
+        public void onLockFocusRetryRequired() {
+            lockFocus();
         }
 
     };
@@ -488,6 +486,7 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
 
     @Override
     void takePicture() {
+        mCaptureCallback.clearLockFocusAttemptsCount();
         if (mAutoFocus) {
             lockFocus();
         } else {
@@ -798,23 +797,29 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
      * Updates the internal state of auto-focus to {@link #mAutoFocus}.
      */
     private void updateAutoFocus() {
-        if (mAutoFocus) {
-            int[] modes = mCameraCharacteristics.get(
-                    CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES);
-            // Auto focus is not supported
-            if (modes == null || modes.length == 0
-                    || (modes.length == 1 && modes[0] == CameraCharacteristics.CONTROL_AF_MODE_OFF)) {
-                mAutoFocus = false;
-                mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                        CaptureRequest.CONTROL_AF_MODE_OFF);
-            } else {
-                mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-            }
-        } else {
-            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                    CaptureRequest.CONTROL_AF_MODE_OFF);
+        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                                   mAutoFocus ? pickAutoFocusMode() : CaptureRequest.CONTROL_AF_MODE_OFF);
+    }
+
+    private int pickAutoFocusMode() {
+        int[] supportedModes = mCameraCharacteristics.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES);
+        if (arrayContains(supportedModes, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)) {
+            // TODO Exclude S5 and Note 3 here.
+            return CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE;
+        } else if (arrayContains(supportedModes, CaptureRequest.CONTROL_AF_MODE_AUTO)) {
+            return CaptureRequest.CONTROL_AF_MODE_AUTO;
         }
+        return CaptureRequest.CONTROL_AF_MODE_OFF;
+    }
+
+    private boolean arrayContains(int[] array, int value) {
+        if (array == null) return false;
+        for (int i = 0; i < array.length; i++) {
+            if (array[i] == value) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -859,9 +864,9 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
      * Locks the focus as the first step for a still image capture.
      */
     private void lockFocus() {
-        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                CaptureRequest.CONTROL_AF_TRIGGER_START);
         try {
+            mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                                       CaptureRequest.CONTROL_AF_TRIGGER_START);
             mCaptureCallback.setState(PictureCaptureCallback.STATE_LOCKING);
             mCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback, null);
         } catch (CameraAccessException e) {
@@ -951,40 +956,6 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
         }
     }
 
-    @Override
-    public void setFocusTarget(int x, int y) {
-        final Rect sensorArraySize = mCameraCharacteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
-        // References: http://www.morethantechnical.com/2017/02/28/android-camera2-touch-to-focus/
-        // TODO take into account sensor orientation
-        final int sensorCenterY = (int) ((x / (float) mSurfaceInfo.width)
-                * (float) sensorArraySize.height());
-        final int sensorCenterX = (int) ((y / (float) mSurfaceInfo.height)
-                * (float) sensorArraySize.width());
-        // touch size in pixel. Values range in [3, 10]...
-        MeteringRectangle focusAreaTouch = new MeteringRectangle(
-                Math.max(sensorCenterX - (TAP_FOCUS_TARGET_SIZE / 2), 0),
-                Math.max(sensorCenterY - (TAP_FOCUS_TARGET_SIZE / 2), 0),
-                TAP_FOCUS_TARGET_SIZE,
-                TAP_FOCUS_TARGET_SIZE,
-                MeteringRectangle.METERING_WEIGHT_MAX - 1);
-        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                                   CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
-        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_REGIONS,
-                                   new MeteringRectangle[]{focusAreaTouch});
-        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                                   CaptureRequest.CONTROL_AF_MODE_AUTO);
-        mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                                   CameraMetadata.CONTROL_AF_TRIGGER_START);
-
-        if (mCaptureSession != null) {
-            try {
-                mCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback, null);
-            } catch (CameraAccessException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
     /**
      * A {@link CameraCaptureSession.CaptureCallback} for capturing a still picture.
      */
@@ -999,9 +970,15 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
         public static final int STATE_CAPTURING = 5;
 
         private int mState;
+        private int mLockFocusAttemptsCount;
+
 
         public void setState(int state) {
             mState = state;
+        }
+
+        void clearLockFocusAttemptsCount() {
+            mLockFocusAttemptsCount = 0;
         }
 
         @Override
@@ -1025,9 +1002,10 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
                     if (af == null) {
                         break;
                     }
-                    if (af == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
-                            af == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED) {
-                        Integer ae = result.get(CaptureResult.CONTROL_AE_STATE);
+                    Integer ae = result.get(CaptureResult.CONTROL_AE_STATE);
+                    boolean focused = af == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED;
+                    boolean notFocused = af == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED;
+                    if (focused || (notFocused && mLockFocusAttemptsCount >= MAX_LOCK_FOCUS_ATTEMPTS)) {
                         if (ae == null || ae == CaptureResult.CONTROL_AE_STATE_CONVERGED) {
                             setState(STATE_CAPTURING);
                             onReady();
@@ -1035,6 +1013,9 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
                             setState(STATE_LOCKED);
                             onPrecaptureRequired();
                         }
+                    } else if (notFocused) {
+                        onLockFocusRetryRequired();
+                        mLockFocusAttemptsCount++;
                     }
                     break;
                 }
@@ -1055,16 +1036,6 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
                     }
                     break;
                 }
-                case STATE_PREVIEW: {
-                    Integer af = result.get(CaptureResult.CONTROL_AF_STATE);
-                    if (af == null) {
-                        break;
-                    }
-                    if (af == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED) { // TODO: 20/06/2017 Make sure this works and resets to continuous focus
-                        onFocused(); // TODO: 20/06/2017 Maybe this also needs to happen at a fixed interval after a tap if this state detection doesn't cover all cases and is not sufficient/just to make sure?
-                    }
-                    break;
-                }
             }
         }
 
@@ -1077,9 +1048,10 @@ class Camera2 extends CameraViewImpl implements TapFocusable {
          * Called when it is necessary to run the precapture sequence.
          */
         public abstract void onPrecaptureRequired();
-
-        public abstract void onFocused();
-
+        /**
+         * Called when locking focus has failed but MAX_LOCK_FOCUS_ATTEMPTS hasn't been reached yet
+         */
+        public abstract void onLockFocusRetryRequired();
     }
 
 }
