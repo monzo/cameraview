@@ -189,12 +189,12 @@ class Camera2 extends CameraViewImpl {
         @Override
         public void onPrecaptureRequired() {
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
-                    CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
+                                       CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
             setState(STATE_PRECAPTURE);
             try {
                 mCaptureSession.capture(mPreviewRequestBuilder.build(), this, null);
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
-                        CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_IDLE);
+                                           CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_IDLE);
             } catch (CameraAccessException e) {
                 Log.e(TAG, "Failed to run precapture sequence.", e);
             }
@@ -248,11 +248,11 @@ class Camera2 extends CameraViewImpl {
 
     private final SizeMap mPreviewSizes = new SizeMap();
 
-    private final SizeMap mPictureSizes = new SizeMap();
+    private final SizeMap mOutputSizes = new SizeMap();
 
     private int mFacing;
 
-    private AspectRatio mAspectRatio = Constants.DEFAULT_ASPECT_RATIO;
+    private AspectRatio mAspectRatio;
 
     private boolean mAutoFocus;
 
@@ -266,8 +266,6 @@ class Camera2 extends CameraViewImpl {
 
     private String mVideoFilePath;
 
-    private android.util.Size mVideoSize;
-
     private int mVideoEncodingBitRate;
 
     private int mVideoFrameRate;
@@ -280,6 +278,8 @@ class Camera2 extends CameraViewImpl {
 
     private Handler mBackgroundHandler;
 
+    private boolean mVideoMode = true;
+
     public Camera2(Callback callback, Context context) {
         super(callback);
         mCameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
@@ -290,8 +290,21 @@ class Camera2 extends CameraViewImpl {
         return mSurfaceTextureListener;
     }
 
+
     @Override
-    void start() {
+    void startVideoMode(String videoFilePath) {
+        mVideoFilePath = videoFilePath;
+        mVideoMode = true;
+        startBackgroundThread();
+        chooseCameraIdByFacing();
+        collectCameraInfo();
+        prepareMediaRecorder();
+        startOpeningCamera();
+    }
+
+    @Override
+    void startPictureMode() {
+        mVideoMode = false;
         startBackgroundThread();
         chooseCameraIdByFacing();
         collectCameraInfo();
@@ -391,7 +404,6 @@ class Camera2 extends CameraViewImpl {
         mFacing = facing;
         if (isCameraOpened()) {
             stop();
-            start();
         }
     }
 
@@ -411,13 +423,21 @@ class Camera2 extends CameraViewImpl {
             // TODO: Better error handling
             return false;
         }
-        if (!mPreviewSizes.ratios().contains(ratio)) {
-            // An appropriate aspect ratio gets calculated in the collectCameraInfo() method once we have more info about the camera capabilities
-            mAspectRatio = null;
+
+        if (!mPreviewSizes.ratios().isEmpty() && !mPreviewSizes.ratios().contains(ratio)) {
+            // If preview sizes were already collected and the new ratio is not in one of them we ignore it
             return false;
         }
+
         mAspectRatio = ratio;
-        prepareImageReader();
+
+        // Update image reader and capture session if there was already an active one
+        if (mImageReader != null) {
+            prepareImageReader();
+        }
+        if (mMediaRecorder != null) {
+            prepareMediaRecorder();
+        }
         if (mCaptureSession != null) {
             mCaptureSession.close();
             mCaptureSession = null;
@@ -443,7 +463,7 @@ class Camera2 extends CameraViewImpl {
             if (mCaptureSession != null) {
                 try {
                     mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(),
-                            mCaptureCallback, null);
+                                                        mCaptureCallback, null);
                 } catch (CameraAccessException e) {
                     mAutoFocus = !mAutoFocus; // Revert
                 }
@@ -468,7 +488,7 @@ class Camera2 extends CameraViewImpl {
             if (mCaptureSession != null) {
                 try {
                     mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(),
-                            mCaptureCallback, null);
+                                                        mCaptureCallback, null);
                 } catch (CameraAccessException e) {
                     mFlash = saved; // Revert
                 }
@@ -498,19 +518,13 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
-    void startRecordingVideo(String videoFilePath) {
-        mVideoFilePath = videoFilePath;
+    void startRecordingVideo() {
         if (!isCameraOpened()) {
             return;
         }
-        try {
-            mStartVideoRecording = true;
-            closePreviewSession();
-            setUpMediaRecorder();
-            startCaptureSession();
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to start video recording.", e);
-        }
+        mStartVideoRecording = true;
+        closePreviewSession();
+        startCaptureSession();
     }
 
     @Override
@@ -519,7 +533,7 @@ class Camera2 extends CameraViewImpl {
         try {
             mRecording = false;
             mMediaRecorder.stop();
-        } catch(RuntimeException e) {
+        } catch (RuntimeException e) {
             Log.e(TAG, "Failed to stop video recording.", e);
             //noinspection ResultOfMethodCallIgnored
             new File(mVideoFilePath).delete();
@@ -540,23 +554,9 @@ class Camera2 extends CameraViewImpl {
         }
     }
 
-    private void setUpMediaRecorder() throws IOException {
-        mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
-        mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-        mMediaRecorder.setOutputFile(mVideoFilePath);
-        mMediaRecorder.setVideoEncodingBitRate(mVideoEncodingBitRate);
-        mMediaRecorder.setVideoFrameRate(mVideoFrameRate);
-        mMediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
-        mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-        mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-        mMediaRecorder.setOrientationHint(getCameraOrientation());
-        mMediaRecorder.prepare();
-    }
-
     /**
      * Chooses a camera ID by the specified camera facing ({@link #mFacing}).
-     *
+     * <p>
      * <p>This rewrites {@link #mCameraId}, {@link #mCameraCharacteristics}, and optionally
      * {@link #mFacing}.</p>
      */
@@ -599,8 +599,8 @@ class Camera2 extends CameraViewImpl {
 
     /**
      * Collects some information from {@link #mCameraCharacteristics}.
-     *
-     * <p>This rewrites {@link #mPreviewSizes}, {@link #mPictureSizes}, and optionally,
+     * <p>
+     * <p>This rewrites {@link #mPreviewSizes}, {@link #mOutputSizes}, and optionally,
      * {@link #mAspectRatio}.</p>
      */
     private void collectCameraInfo() {
@@ -617,29 +617,27 @@ class Camera2 extends CameraViewImpl {
                 mPreviewSizes.add(new Size(width, height));
             }
         }
-        mPictureSizes.clear();
-        collectPictureSizes(map);
+        mOutputSizes.clear();
+        collectOutputSizes(map);
         for (AspectRatio ratio : mPreviewSizes.ratios()) {
-            if (!mPictureSizes.ratios().contains(ratio)) {
+            if (!mOutputSizes.ratios().contains(ratio)) {
                 mPreviewSizes.remove(ratio);
             }
         }
 
-        // Get the aspect ratio of the largest available picture size that the camera sensor supports (rather than using the preview size)
+        // Get the aspect ratio of the largest available output size that the camera sensor supports (rather than using the preview size)
         // (This is necessary on some phones – e.g. Galaxy S5 w/ 4:3 – where the preview size ratio is supposedly supported but still appears stretched)
-        if (mAspectRatio == null) {
-            final Size largest = mPictureSizes.largest();
+        if (mAspectRatio == null || mPreviewSizes.sizes(mAspectRatio).isEmpty()) {
+            final Size largest = mOutputSizes.largest();
             mAspectRatio = AspectRatio.of(largest.getWidth(), largest.getHeight());
-        }
-
-        if (!mPreviewSizes.ratios().contains(mAspectRatio)) {
-            mAspectRatio = mPreviewSizes.ratios().iterator().next();
         }
     }
 
-    protected void collectPictureSizes(StreamConfigurationMap map) {
-        for (android.util.Size size : map.getOutputSizes(ImageFormat.JPEG)) {
-            mPictureSizes.add(new Size(size.getWidth(), size.getHeight()));
+    private void collectOutputSizes(StreamConfigurationMap map) {
+        android.util.Size[] sizes = mVideoMode ?
+                map.getOutputSizes(MediaRecorder.class) : map.getOutputSizes(ImageFormat.JPEG);
+        for (android.util.Size size : sizes) {
+            mOutputSizes.add(new Size(size.getWidth(), size.getHeight()));
         }
     }
 
@@ -647,20 +645,45 @@ class Camera2 extends CameraViewImpl {
         if (mImageReader != null) {
             mImageReader.close();
         }
-        Size largest = mPictureSizes.sizes(mAspectRatio).last();
+        Size largest = mOutputSizes.sizes(mAspectRatio).last();
         mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
-                ImageFormat.JPEG, /* maxImages */ 2);
+                                               ImageFormat.JPEG, /* maxImages */ 2);
         mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, null);
+    }
+
+    private void prepareMediaRecorder() {
+        try {
+            if (mMediaRecorder == null) {
+                mMediaRecorder = new MediaRecorder();
+            } else {
+                mMediaRecorder.reset();
+            }
+
+            Size videoSize = chooseVideoSize(mMinVideoWidth, mMinVideoHeight);
+
+            mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+            mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+            mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            mMediaRecorder.setOutputFile(mVideoFilePath);
+            mMediaRecorder.setVideoEncodingBitRate(mVideoEncodingBitRate);
+            mMediaRecorder.setVideoFrameRate(mVideoFrameRate);
+            mMediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
+            mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+            mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            mMediaRecorder.setOrientationHint(getCameraOrientation());
+            mMediaRecorder.prepare();
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to prepare MediaRecorder ", e);
+        }
     }
 
     /**
      * Starts opening a camera device.
-     *
+     * <p>
      * <p>The result will be processed in {@link #mCameraDeviceCallback}.</p>
      */
     private void startOpeningCamera() {
         try {
-            mMediaRecorder = new MediaRecorder();
             mCameraManager.openCamera(mCameraId, mCameraDeviceCallback, null);
         } catch (CameraAccessException e) {
             throw new RuntimeException("Failed to open camera: " + mCameraId, e);
@@ -669,25 +692,20 @@ class Camera2 extends CameraViewImpl {
 
     /**
      * Starts a capture session for camera preview.
-     *
+     * <p>
      * <p>This rewrites {@link #mPreviewRequestBuilder}.</p>
-     *
+     * <p>
      * <p>The result will be continuously processed in {@link #mSessionCallback}.</p>
      */
     private void startCaptureSession() {
-        if (!isCameraOpened() || mSurfaceInfo.surface == null || mImageReader == null) {
+        if (!isCameraOpened() || mSurfaceInfo.surface == null
+                || (mVideoMode && mMediaRecorder == null) || (!mVideoMode && mImageReader == null)) {
             return;
         }
         Size previewSize = chooseOptimalSize();
         mSurfaceInfo.surface.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
         Surface surface = new Surface(mSurfaceInfo.surface);
         try {
-            CameraCharacteristics characteristics = mCameraManager.getCameraCharacteristics(mCameraId);
-            StreamConfigurationMap map = characteristics
-                    .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-            @SuppressWarnings("ConstantConditions")
-            android.util.Size[] supportedOutputSizes = map.getOutputSizes(MediaRecorder.class);
-            mVideoSize = chooseVideoSize(supportedOutputSizes, mMinVideoWidth, mMinVideoHeight);
             if (mStartVideoRecording) {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
                 mPreviewRequestBuilder.addTarget(surface);
@@ -697,7 +715,8 @@ class Camera2 extends CameraViewImpl {
             } else {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                 mPreviewRequestBuilder.addTarget(surface);
-                mCamera.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
+                Surface outputSurface = !mVideoMode ? mImageReader.getSurface() : mMediaRecorder.getSurface();
+                mCamera.createCaptureSession(Arrays.asList(surface, outputSurface),
                                              mSessionCallback, mBackgroundHandler);
             }
         } catch (CameraAccessException e) {
@@ -705,27 +724,25 @@ class Camera2 extends CameraViewImpl {
         }
     }
 
-    private android.util.Size chooseVideoSize(android.util.Size[] choices, int width, int height) {
-        if (choices == null || choices.length == 0) {
-            throw new RuntimeException("Failed to start video recording session. Camera didn't return any output sizes.");
-        }
-        List<android.util.Size> bigEnough = new ArrayList<>();
-        for (android.util.Size option : choices) {
+    private Size chooseVideoSize(int width, int height) {
+        SortedSet<Size> bestSizes = mOutputSizes.sizes(mAspectRatio);
+        List<Size> bigEnough = new ArrayList<>();
+        for (Size option : bestSizes) {
             if (option.getWidth() >= width && option.getHeight() >= height) {
                 bigEnough.add(option);
             }
         }
 
         if (bigEnough.size() > 0) {
-            return Collections.min(bigEnough, new Comparator<android.util.Size>() {
+            return Collections.min(bigEnough, new Comparator<Size>() {
                 @Override
-                public int compare(android.util.Size size1, android.util.Size size2) {
-                    return Integer.compare(size1.getWidth() * size1.getHeight(), size2.getWidth() * size2.getHeight());
+                public int compare(Size size1, Size size2) {
+                    return Long.compare(size1.getArea(), size2.getArea());
                 }
             });
         } else {
             Log.e(TAG, "Couldn't find any suitable video recording size");
-            return choices[0];
+            return bestSizes.last();
         }
     }
 
@@ -808,33 +825,33 @@ class Camera2 extends CameraViewImpl {
         switch (mFlash) {
             case Constants.FLASH_OFF:
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                        CaptureRequest.CONTROL_AE_MODE_ON);
+                                           CaptureRequest.CONTROL_AE_MODE_ON);
                 mPreviewRequestBuilder.set(CaptureRequest.FLASH_MODE,
-                        CaptureRequest.FLASH_MODE_OFF);
+                                           CaptureRequest.FLASH_MODE_OFF);
                 break;
             case Constants.FLASH_ON:
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                        CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH);
+                                           CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH);
                 mPreviewRequestBuilder.set(CaptureRequest.FLASH_MODE,
-                        CaptureRequest.FLASH_MODE_OFF);
+                                           CaptureRequest.FLASH_MODE_OFF);
                 break;
             case Constants.FLASH_TORCH:
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                        CaptureRequest.CONTROL_AE_MODE_ON);
+                                           CaptureRequest.CONTROL_AE_MODE_ON);
                 mPreviewRequestBuilder.set(CaptureRequest.FLASH_MODE,
-                        CaptureRequest.FLASH_MODE_TORCH);
+                                           CaptureRequest.FLASH_MODE_TORCH);
                 break;
             case Constants.FLASH_AUTO:
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                        CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+                                           CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
                 mPreviewRequestBuilder.set(CaptureRequest.FLASH_MODE,
-                        CaptureRequest.FLASH_MODE_OFF);
+                                           CaptureRequest.FLASH_MODE_OFF);
                 break;
             case Constants.FLASH_RED_EYE:
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                        CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH_REDEYE);
+                                           CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH_REDEYE);
                 mPreviewRequestBuilder.set(CaptureRequest.FLASH_MODE,
-                        CaptureRequest.FLASH_MODE_OFF);
+                                           CaptureRequest.FLASH_MODE_OFF);
                 break;
         }
     }
@@ -862,31 +879,31 @@ class Camera2 extends CameraViewImpl {
                     CameraDevice.TEMPLATE_STILL_CAPTURE);
             captureRequestBuilder.addTarget(mImageReader.getSurface());
             captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                    mPreviewRequestBuilder.get(CaptureRequest.CONTROL_AF_MODE));
+                                      mPreviewRequestBuilder.get(CaptureRequest.CONTROL_AF_MODE));
             switch (mFlash) {
                 case Constants.FLASH_OFF:
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                            CaptureRequest.CONTROL_AE_MODE_ON);
+                                              CaptureRequest.CONTROL_AE_MODE_ON);
                     captureRequestBuilder.set(CaptureRequest.FLASH_MODE,
-                            CaptureRequest.FLASH_MODE_OFF);
+                                              CaptureRequest.FLASH_MODE_OFF);
                     break;
                 case Constants.FLASH_ON:
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                            CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH);
+                                              CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH);
                     break;
                 case Constants.FLASH_TORCH:
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                            CaptureRequest.CONTROL_AE_MODE_ON);
+                                              CaptureRequest.CONTROL_AE_MODE_ON);
                     captureRequestBuilder.set(CaptureRequest.FLASH_MODE,
-                            CaptureRequest.FLASH_MODE_TORCH);
+                                              CaptureRequest.FLASH_MODE_TORCH);
                     break;
                 case Constants.FLASH_AUTO:
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                            CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+                                              CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
                     break;
                 case Constants.FLASH_RED_EYE:
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                            CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+                                              CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
                     break;
             }
             // Calculate JPEG orientation.
@@ -894,14 +911,14 @@ class Camera2 extends CameraViewImpl {
             // Stop preview and capture a still picture.
             mCaptureSession.stopRepeating();
             mCaptureSession.capture(captureRequestBuilder.build(),
-                    new CameraCaptureSession.CaptureCallback() {
-                        @Override
-                        public void onCaptureCompleted(@NonNull CameraCaptureSession session,
-                                                       @NonNull CaptureRequest request,
-                                                       @NonNull TotalCaptureResult result) {
-                            unlockFocus();
-                        }
-                    }, null);
+                                    new CameraCaptureSession.CaptureCallback() {
+                                        @Override
+                                        public void onCaptureCompleted(@NonNull CameraCaptureSession session,
+                                                                       @NonNull CaptureRequest request,
+                                                                       @NonNull TotalCaptureResult result) {
+                                            unlockFocus();
+                                        }
+                                    }, null);
         } catch (CameraAccessException e) {
             Log.e(TAG, "Cannot capture a still picture.", e);
         }
@@ -920,15 +937,15 @@ class Camera2 extends CameraViewImpl {
      */
     private void unlockFocus() {
         mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
+                                   CaptureRequest.CONTROL_AF_TRIGGER_CANCEL);
         try {
             mCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback, null);
             updateAutoFocus();
             updateFlash();
             mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                    CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+                                       CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
             mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), mCaptureCallback,
-                    null);
+                                                null);
             mCaptureCallback.setState(PictureCaptureCallback.STATE_PREVIEW);
         } catch (CameraAccessException e) {
             Log.e(TAG, "Failed to restart camera preview.", e);

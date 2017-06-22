@@ -218,11 +218,22 @@ public class CameraView extends FrameLayout {
     }
 
     /**
-     * Open a camera device and start showing camera preview. This is typically called from
+     * Open a camera device and start showing camera preview for taking pictures. This is typically called from
      * {@link Activity#onResume()}.
      */
-    public void start() {
-        mImpl.start();
+    public void startPictureMode() {
+        mImpl.startPictureMode();
+    }
+
+
+    /**
+     * Open a camera device and start showing camera preview for video recording. This is typically called from
+     * {@link Activity#onResume()}.
+     *
+     * @param videoFilePath A path to a file where the video will be saved
+     */
+    public void startVideoMode(String videoFilePath) {
+        mImpl.startVideoMode(videoFilePath);
     }
 
     /**
@@ -438,11 +449,9 @@ public class CameraView extends FrameLayout {
 
     /**
      * Start recording a video.
-     *
-     * @param videoFilePath File path where the video will be stored.
      */
-    public void startRecordingVideo(String videoFilePath) {
-        mImpl.startRecordingVideo(videoFilePath);
+    public void startRecordingVideo() {
+        mImpl.startRecordingVideo();
     }
 
     /**

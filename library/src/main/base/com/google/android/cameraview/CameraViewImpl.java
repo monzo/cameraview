@@ -31,7 +31,9 @@ abstract class CameraViewImpl {
 
     abstract TextureView.SurfaceTextureListener getSurfaceTextureListener();
 
-    abstract void start();
+    abstract void startPictureMode();
+
+    abstract void startVideoMode(String videoFilePath);
 
     abstract void stop();
 
@@ -78,7 +80,7 @@ abstract class CameraViewImpl {
 
     abstract void setDisplayOrientation(int displayOrientation);
 
-    abstract void startRecordingVideo(String videoFilePath);
+    abstract void startRecordingVideo();
 
     abstract void stopRecordingVideo();
 

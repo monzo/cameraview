@@ -16,6 +16,7 @@
 
 package com.google.android.cameraview;
 
+import android.support.annotation.Nullable;
 import android.support.v4.util.ArrayMap;
 import android.support.v4.util.ArraySet;
 
@@ -71,7 +72,10 @@ class SizeMap {
     }
 
     SortedSet<Size> sizes(AspectRatio ratio) {
-        return mRatios.get(ratio);
+        if (mRatios.containsKey(ratio)) {
+            return mRatios.get(ratio);
+        }
+        return new TreeSet<>();
     }
 
     Size largest() {
