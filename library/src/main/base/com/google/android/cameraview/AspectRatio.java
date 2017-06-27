@@ -16,6 +16,7 @@
 
 package com.google.android.cameraview;
 
+import android.content.res.Configuration;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.annotation.NonNull;
@@ -100,6 +101,16 @@ public class AspectRatio implements Comparable<AspectRatio>, Parcelable {
         int x = size.getWidth() / gcd;
         int y = size.getHeight() / gcd;
         return mX == x && mY == y;
+    }
+
+    public boolean matchesOrientation(int orientation) {
+        switch (orientation) {
+            case Configuration.ORIENTATION_LANDSCAPE:
+                return toFloat() >= 1;
+            case Configuration.ORIENTATION_PORTRAIT:
+                return toFloat() <= 1;
+        }
+        return false;
     }
 
     @Override

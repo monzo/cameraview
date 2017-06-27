@@ -16,11 +16,7 @@
 
 package com.google.android.cameraview;
 
-
 interface Constants {
-
-    AspectRatio DEFAULT_ASPECT_RATIO = AspectRatio.of(4, 3);
-
     int FACING_BACK = 0;
     int FACING_FRONT = 1;
 
@@ -29,5 +25,4 @@ interface Constants {
     int FLASH_TORCH = 2;
     int FLASH_AUTO = 3;
     int FLASH_RED_EYE = 4;
-
 }

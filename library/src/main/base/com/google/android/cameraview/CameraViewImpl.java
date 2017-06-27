@@ -33,7 +33,7 @@ abstract class CameraViewImpl {
 
     abstract void startPictureMode();
 
-    abstract void startVideoMode(String videoFilePath);
+    abstract void startVideoMode();
 
     abstract void stop();
 
@@ -64,9 +64,18 @@ abstract class CameraViewImpl {
     /**
      * @return {@code true} if the aspect ratio was changed.
      */
-    abstract boolean setAspectRatio(AspectRatio ratio);
+    abstract boolean setPreferredAspectRatios(AspectRatio[] ratios);
+
+    abstract AspectRatio[] getPreferredAspectRatios();
 
     abstract AspectRatio getAspectRatio();
+
+    /**
+     * Overall orientation of the screen. May be one of
+     * {@link android.content.res.Configuration#ORIENTATION_LANDSCAPE},
+     * {@link android.content.res.Configuration#ORIENTATION_PORTRAIT}.
+     */
+    abstract void setScreenOrientation(int screenOrientation);
 
     abstract void setAutoFocus(boolean autoFocus);
 
@@ -80,7 +89,7 @@ abstract class CameraViewImpl {
 
     abstract void setDisplayOrientation(int displayOrientation);
 
-    abstract void startRecordingVideo();
+    abstract void startRecordingVideo(String videoFilePath);
 
     abstract void stopRecordingVideo();
 

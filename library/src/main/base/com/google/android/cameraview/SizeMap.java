@@ -16,6 +16,7 @@
 
 package com.google.android.cameraview;
 
+import android.content.res.Configuration;
 import android.support.annotation.Nullable;
 import android.support.v4.util.ArrayMap;
 import android.support.v4.util.ArraySet;
@@ -78,12 +79,18 @@ class SizeMap {
         return new TreeSet<>();
     }
 
-    Size largest() {
-        Set<Size> allSizes = new ArraySet<>();
-        for (SortedSet<Size> sizes: mRatios.values()) {
-            allSizes.addAll(sizes);
+    Size largest(int preferredOrientation) {
+        Set<Size> preferredSizes = new ArraySet<>();
+        Set<Size> otherSizes = new ArraySet<>();
+        for (AspectRatio ratio : mRatios.keySet()) {
+            if (ratio.matchesOrientation(preferredOrientation)) {
+                preferredSizes.addAll(mRatios.get(ratio));
+            } else {
+                otherSizes.addAll(mRatios.get(ratio));
+            }
         }
-        return Collections.max(allSizes, new CompareSizesByArea());
+
+        return Collections.max(!preferredSizes.isEmpty() ? preferredSizes : otherSizes, new CompareSizesByArea());
     }
 
     void clear() {

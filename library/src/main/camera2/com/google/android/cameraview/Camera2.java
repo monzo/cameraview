@@ -18,6 +18,7 @@ package com.google.android.cameraview;
 
 import android.annotation.TargetApi;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
@@ -254,6 +255,8 @@ class Camera2 extends CameraViewImpl {
 
     private AspectRatio mAspectRatio;
 
+    private AspectRatio[] mPreferredRatios = new AspectRatio[0];
+
     private boolean mAutoFocus;
 
     private int mFlash;
@@ -280,6 +283,8 @@ class Camera2 extends CameraViewImpl {
 
     private boolean mVideoMode = true;
 
+    private int mScreenOrientation = Configuration.ORIENTATION_PORTRAIT;
+
     public Camera2(Callback callback, Context context) {
         super(callback);
         mCameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
@@ -292,13 +297,11 @@ class Camera2 extends CameraViewImpl {
 
 
     @Override
-    void startVideoMode(String videoFilePath) {
-        mVideoFilePath = videoFilePath;
+    void startVideoMode() {
         mVideoMode = true;
         startBackgroundThread();
         chooseCameraIdByFacing();
         collectCameraInfo();
-        prepareMediaRecorder();
         startOpeningCamera();
     }
 
@@ -418,38 +421,41 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
-    boolean setAspectRatio(AspectRatio ratio) {
-        if (ratio.equals(mAspectRatio)) {
-            // TODO: Better error handling
+    boolean setPreferredAspectRatios(AspectRatio[] ratios) {
+        mPreferredRatios = ratios;
+        AspectRatio newAspectRatio = chooseBestAspectRatio();
+
+        if (newAspectRatio == null || newAspectRatio.equals(mAspectRatio)) {
             return false;
         }
 
-        if (!mPreviewSizes.ratios().isEmpty() && !mPreviewSizes.ratios().contains(ratio)) {
-            // If preview sizes were already collected and the new ratio is not in one of them we ignore it
-            return false;
-        }
-
-        mAspectRatio = ratio;
-
-        // Update image reader and capture session if there was already an active one
+        // Update image reader, recorder and capture session if there were already an active ones
         if (mImageReader != null) {
             prepareImageReader();
-        }
-        if (mMediaRecorder != null) {
-            prepareMediaRecorder();
         }
         if (mCaptureSession != null) {
             mCaptureSession.close();
             mCaptureSession = null;
             startCaptureSession();
         }
+
         return true;
+    }
+
+    @Override
+    AspectRatio[] getPreferredAspectRatios() {
+        return mPreferredRatios;
     }
 
     @Override
     @Nullable
     AspectRatio getAspectRatio() {
         return mAspectRatio;
+    }
+
+    @Override
+    void setScreenOrientation(int screenOrientation) {
+        mScreenOrientation = screenOrientation;
     }
 
     @Override
@@ -518,13 +524,19 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
-    void startRecordingVideo() {
-        if (!isCameraOpened()) {
-            return;
+    void startRecordingVideo(String videoFilePath) {
+        try {
+            if (!isCameraOpened()) {
+                return;
+            }
+            mVideoFilePath = videoFilePath;
+            mStartVideoRecording = true;
+            prepareMediaRecorder();
+            closePreviewSession();
+            startCaptureSession();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
-        mStartVideoRecording = true;
-        closePreviewSession();
-        startCaptureSession();
     }
 
     @Override
@@ -625,12 +637,28 @@ class Camera2 extends CameraViewImpl {
             }
         }
 
-        // Get the aspect ratio of the largest available output size that the camera sensor supports (rather than using the preview size)
-        // (This is necessary on some phones – e.g. Galaxy S5 w/ 4:3 – where the preview size ratio is supposedly supported but still appears stretched)
-        if (mAspectRatio == null || mPreviewSizes.sizes(mAspectRatio).isEmpty()) {
-            final Size largest = mOutputSizes.largest();
-            mAspectRatio = AspectRatio.of(largest.getWidth(), largest.getHeight());
+        mAspectRatio = chooseBestAspectRatio();
+    }
+
+    /**
+     * @return the best supported aspect ratio based on the preferred ratios.
+     * If none of the preferred ratios are available, it chooses the ratio of the largest preview
+     * size that matches the screen orientation.
+     * It returns null if the list of preview sizes hasn't been collected yet
+     */
+    @Nullable
+    private AspectRatio chooseBestAspectRatio() {
+        if (mPreviewSizes == null || mPreviewSizes.ratios().isEmpty()) {
+            return null;
         }
+        for (AspectRatio ratio : mPreferredRatios) {
+            if (mPreviewSizes.ratios().contains(ratio)) {
+                return ratio;
+            }
+        }
+
+        Size largest = mPreviewSizes.largest(mScreenOrientation);
+        return AspectRatio.of(largest.getWidth(), largest.getHeight());
     }
 
     private void collectOutputSizes(StreamConfigurationMap map) {
@@ -651,30 +679,26 @@ class Camera2 extends CameraViewImpl {
         mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, null);
     }
 
-    private void prepareMediaRecorder() {
-        try {
-            if (mMediaRecorder == null) {
-                mMediaRecorder = new MediaRecorder();
-            } else {
-                mMediaRecorder.reset();
-            }
-
-            Size videoSize = chooseVideoSize(mMinVideoWidth, mMinVideoHeight);
-
-            mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-            mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
-            mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-            mMediaRecorder.setOutputFile(mVideoFilePath);
-            mMediaRecorder.setVideoEncodingBitRate(mVideoEncodingBitRate);
-            mMediaRecorder.setVideoFrameRate(mVideoFrameRate);
-            mMediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
-            mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-            mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-            mMediaRecorder.setOrientationHint(getCameraOrientation());
-            mMediaRecorder.prepare();
-        } catch (IOException e) {
-            throw new RuntimeException("Unable to prepare MediaRecorder ", e);
+    private void prepareMediaRecorder() throws IOException {
+        if (mMediaRecorder == null) {
+            mMediaRecorder = new MediaRecorder();
+        } else {
+            mMediaRecorder.reset();
         }
+
+        Size videoSize = chooseVideoSize(mMinVideoWidth, mMinVideoHeight);
+
+        mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+        mMediaRecorder.setOutputFile(mVideoFilePath);
+        mMediaRecorder.setVideoEncodingBitRate(mVideoEncodingBitRate);
+        mMediaRecorder.setVideoFrameRate(mVideoFrameRate);
+        mMediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
+        mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+        mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        mMediaRecorder.setOrientationHint(getCameraOrientation());
+        mMediaRecorder.prepare();
     }
 
     /**
@@ -698,29 +722,31 @@ class Camera2 extends CameraViewImpl {
      * <p>The result will be continuously processed in {@link #mSessionCallback}.</p>
      */
     private void startCaptureSession() {
-        if (!isCameraOpened() || mSurfaceInfo.surface == null
-                || (mVideoMode && mMediaRecorder == null) || (!mVideoMode && mImageReader == null)) {
+        if (!isCameraOpened() || mSurfaceInfo.surface == null || (!mVideoMode && mImageReader == null)) {
             return;
         }
-        Size previewSize = chooseOptimalSize();
-        mSurfaceInfo.surface.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-        Surface surface = new Surface(mSurfaceInfo.surface);
         try {
+            Size previewSize = chooseOptimalSize();
+            mSurfaceInfo.surface.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
+            Surface surface = new Surface(mSurfaceInfo.surface);
+            List<Surface> outputs = new ArrayList<>();
+            outputs.add(surface);
+
             if (mStartVideoRecording) {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
-                mPreviewRequestBuilder.addTarget(surface);
                 mPreviewRequestBuilder.addTarget(mMediaRecorder.getSurface());
-                mCamera.createCaptureSession(Arrays.asList(surface, mMediaRecorder.getSurface()),
-                                             mSessionCallback, mBackgroundHandler);
+                mPreviewRequestBuilder.addTarget(surface);
+                outputs.add(mMediaRecorder.getSurface());
             } else {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                 mPreviewRequestBuilder.addTarget(surface);
-                Surface outputSurface = !mVideoMode ? mImageReader.getSurface() : mMediaRecorder.getSurface();
-                mCamera.createCaptureSession(Arrays.asList(surface, outputSurface),
-                                             mSessionCallback, mBackgroundHandler);
+                if (mImageReader != null) {
+                    outputs.add(mImageReader.getSurface());
+                }
             }
+            mCamera.createCaptureSession(outputs, mSessionCallback, mBackgroundHandler);
         } catch (CameraAccessException e) {
-            throw new RuntimeException("Failed to start camera session");
+            throw new RuntimeException("Failed to start capture session", e);
         }
     }
 
