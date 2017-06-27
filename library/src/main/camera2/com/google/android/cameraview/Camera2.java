@@ -407,6 +407,11 @@ class Camera2 extends CameraViewImpl {
         mFacing = facing;
         if (isCameraOpened()) {
             stop();
+            if (mVideoMode) {
+                startVideoMode();
+            } else {
+                startPictureMode();
+            }
         }
     }
 
@@ -746,7 +751,7 @@ class Camera2 extends CameraViewImpl {
             }
             mCamera.createCaptureSession(outputs, mSessionCallback, mBackgroundHandler);
         } catch (CameraAccessException e) {
-            throw new RuntimeException("Failed to start capture session", e);
+            throw new RuntimeException("Failed to start capture session for mode " + (mVideoMode ? "video" : "picture"), e);
         }
     }
 
