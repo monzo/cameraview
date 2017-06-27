@@ -31,7 +31,9 @@ abstract class CameraViewImpl {
 
     abstract TextureView.SurfaceTextureListener getSurfaceTextureListener();
 
-    abstract void start();
+    abstract void startPictureMode();
+
+    abstract void startVideoMode();
 
     abstract void stop();
 
@@ -59,9 +61,21 @@ abstract class CameraViewImpl {
 
     abstract Set<AspectRatio> getSupportedAspectRatios();
 
-    abstract void setAspectRatio(AspectRatio ratio);
+    /**
+     * @return {@code true} if the aspect ratio was changed.
+     */
+    abstract boolean setPreferredAspectRatios(AspectRatio[] ratios);
+
+    abstract AspectRatio[] getPreferredAspectRatios();
 
     abstract AspectRatio getAspectRatio();
+
+    /**
+     * Overall orientation of the screen. May be one of
+     * {@link android.content.res.Configuration#ORIENTATION_LANDSCAPE},
+     * {@link android.content.res.Configuration#ORIENTATION_PORTRAIT}.
+     */
+    abstract void setScreenOrientation(int screenOrientation);
 
     abstract void setAutoFocus(boolean autoFocus);
 

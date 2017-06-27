@@ -16,8 +16,13 @@
 
 package com.google.android.cameraview;
 
+import android.content.res.Configuration;
+import android.support.annotation.Nullable;
 import android.support.v4.util.ArrayMap;
+import android.support.v4.util.ArraySet;
 
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -68,10 +73,38 @@ class SizeMap {
     }
 
     SortedSet<Size> sizes(AspectRatio ratio) {
-        return mRatios.get(ratio);
+        if (mRatios.containsKey(ratio)) {
+            return mRatios.get(ratio);
+        }
+        return new TreeSet<>();
+    }
+
+    Size largest(int preferredOrientation) {
+        Set<Size> preferredSizes = new ArraySet<>();
+        Set<Size> otherSizes = new ArraySet<>();
+        for (AspectRatio ratio : mRatios.keySet()) {
+            if (ratio.matchesOrientation(preferredOrientation)) {
+                preferredSizes.addAll(mRatios.get(ratio));
+            } else {
+                otherSizes.addAll(mRatios.get(ratio));
+            }
+        }
+
+        return Collections.max(!preferredSizes.isEmpty() ? preferredSizes : otherSizes, new CompareSizesByArea());
     }
 
     void clear() {
         mRatios.clear();
+    }
+
+    /**
+     * Compares two {@code Size}s based on their areas.
+     */
+    private static class CompareSizesByArea implements Comparator<Size> {
+
+        @Override
+        public int compare(Size lhs, Size rhs) {
+            return Long.signum(lhs.getArea() - rhs.getArea());
+        }
     }
 }

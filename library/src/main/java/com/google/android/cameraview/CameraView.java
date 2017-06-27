@@ -34,6 +34,7 @@ import android.widget.FrameLayout;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 public class CameraView extends FrameLayout {
@@ -107,11 +108,9 @@ public class CameraView extends FrameLayout {
         setVideoFrameRate(a.getInt(R.styleable.CameraView_videoFrameRate, 30));
         setMinVideoWidth(a.getInt(R.styleable.CameraView_minVideoWidth, 0));
         setMinVideoHeight(a.getInt(R.styleable.CameraView_minVideoHeight, 0));
-        String aspectRatio = a.getString(R.styleable.CameraView_aspectRatio);
-        if (aspectRatio != null) {
-            setAspectRatio(AspectRatio.parse(aspectRatio));
-        } else {
-            setAspectRatio(Constants.DEFAULT_ASPECT_RATIO);
+        String ratios = a.getString(R.styleable.CameraView_preferredAspectRatios);
+        if (ratios != null) {
+            setPreferredAspectRatio(parseAspectRatios(ratios));
         }
         setAutoFocus(a.getBoolean(R.styleable.CameraView_autoFocus, true));
         setFlash(a.getInt(R.styleable.CameraView_flash, Constants.FLASH_AUTO));
@@ -123,6 +122,16 @@ public class CameraView extends FrameLayout {
                 mImpl.setDisplayOrientation(displayOrientation);
             }
         };
+    }
+
+    private AspectRatio[] parseAspectRatios(@NonNull String ratiosInput) {
+        String[] ratioStrings = ratiosInput.split("\\|");
+        List<AspectRatio> aspectRatios = new ArrayList<>(ratioStrings.length);
+        for (String ratio : ratioStrings) {
+            aspectRatios.add(AspectRatio.parse(ratio.trim()));
+        }
+        AspectRatio[] result = new AspectRatio[aspectRatios.size()];
+        return aspectRatios.toArray(result);
     }
 
     @Override
@@ -197,7 +206,7 @@ public class CameraView extends FrameLayout {
     protected Parcelable onSaveInstanceState() {
         SavedState state = new SavedState(super.onSaveInstanceState());
         state.facing = getFacing();
-        state.ratio = getAspectRatio();
+        state.preferredRatios = getPreferredAspectRatios();
         state.autoFocus = getAutoFocus();
         state.flash = getFlash();
         return state;
@@ -212,17 +221,28 @@ public class CameraView extends FrameLayout {
         SavedState ss = (SavedState) state;
         super.onRestoreInstanceState(ss.getSuperState());
         setFacing(ss.facing);
-        setAspectRatio(ss.ratio);
+        setPreferredAspectRatio(ss.preferredRatios);
         setAutoFocus(ss.autoFocus);
         setFlash(ss.flash);
     }
 
     /**
-     * Open a camera device and start showing camera preview. This is typically called from
+     * Open a camera device and start showing camera preview for taking pictures. This is typically called from
      * {@link Activity#onResume()}.
      */
-    public void start() {
-        mImpl.start();
+    public void startPictureMode() {
+        mImpl.setScreenOrientation(getResources().getConfiguration().orientation);
+        mImpl.startPictureMode();
+    }
+
+
+    /**
+     * Open a camera device and start showing camera preview for video recording. This is typically called from
+     * {@link Activity#onResume()}.
+     */
+    public void startVideoMode() {
+        mImpl.setScreenOrientation(getResources().getConfiguration().orientation);
+        mImpl.startVideoMode();
     }
 
     /**
@@ -375,16 +395,28 @@ public class CameraView extends FrameLayout {
     }
 
     /**
-     * Sets the aspect ratio of camera.
+     * Sets the preferred aspect ratios for the camera output.
+     * The first ratio in the array will be set if the camera supports it, if not the second will
+     * be picked and so on. If none of the ratios in the list is supported or the list is empty,
+     * the CameraView will fallback to the ratio of the largest picture size available that matches
+     * the screen orientation.
      *
-     * @param ratio The {@link AspectRatio} to be set.
+     * @param aspectRatios An array of {@link AspectRatio} ordered by preference
      */
-    public void setAspectRatio(@NonNull AspectRatio ratio) {
-        mImpl.setAspectRatio(ratio);
+    public void setPreferredAspectRatio(AspectRatio[] aspectRatios) {
+        if (mImpl.setPreferredAspectRatios(aspectRatios)) {
+            requestLayout();
+        }
+    }
+
+    public AspectRatio[] getPreferredAspectRatios() {
+        return mImpl.getPreferredAspectRatios();
     }
 
     /**
      * Gets the current aspect ratio of camera.
+     * This ratio is chosen based on the preferred ratios and the ratios supported by the camera.
+     * There is no guarantee that is one of the preferred aspect ratios
      *
      * @return The current {@link AspectRatio}. Can be {@code null} if no camera is opened yet.
      */
@@ -437,7 +469,7 @@ public class CameraView extends FrameLayout {
     /**
      * Start recording a video.
      *
-     * @param videoFilePath File path where the video will be stored.
+     * @param videoFilePath a path to the file where the video will be saved
      */
     public void startRecordingVideo(String videoFilePath) {
         mImpl.startRecordingVideo(videoFilePath);
@@ -519,7 +551,7 @@ public class CameraView extends FrameLayout {
         @Facing
         int facing;
 
-        AspectRatio ratio;
+        AspectRatio[] preferredRatios;
 
         boolean autoFocus;
 
@@ -530,7 +562,7 @@ public class CameraView extends FrameLayout {
         public SavedState(Parcel source, ClassLoader loader) {
             super(source);
             facing = source.readInt();
-            ratio = source.readParcelable(loader);
+            preferredRatios = source.createTypedArray(AspectRatio.CREATOR);
             autoFocus = source.readByte() != 0;
             flash = source.readInt();
         }
@@ -543,7 +575,7 @@ public class CameraView extends FrameLayout {
         public void writeToParcel(Parcel out, int flags) {
             super.writeToParcel(out, flags);
             out.writeInt(facing);
-            out.writeParcelable(ratio, 0);
+            out.writeTypedArray(preferredRatios, 0);
             out.writeByte((byte) (autoFocus ? 1 : 0));
             out.writeInt(flash);
         }

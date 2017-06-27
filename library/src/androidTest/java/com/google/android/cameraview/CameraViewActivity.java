@@ -35,7 +35,7 @@ public class CameraViewActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        mCameraView.start();
+        mCameraView.startPictureMode();
     }
 
     @Override
