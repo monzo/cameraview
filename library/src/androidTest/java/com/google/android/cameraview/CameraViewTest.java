@@ -123,7 +123,8 @@ public class CameraViewTest {
                             }
                         }
                         assert ratio != null;
-                        cameraView.setAspectRatio(ratio);
+                        AspectRatio[] preferredRatios = {ratio};
+                        cameraView.setPreferredAspectRatio(preferredRatios);
                         assertThat(cameraView.getAspectRatio(), is(equalTo(ratio)));
                     }
                 });
