@@ -185,10 +185,14 @@ public class CameraView extends FrameLayout {
         int width = getMeasuredWidth();
         int height = getMeasuredHeight();
         AspectRatio ratio = getAspectRatio();
+        if (ratio == null) {
+            return;
+        }
+
         if (mDisplayOrientationDetector.getLastKnownDisplayOrientation() % 180 == 0) {
             ratio = ratio.inverse();
         }
-        assert ratio != null;
+
         if (height < width * ratio.getY() / ratio.getX()) {
             mTextureView.measure(
                     MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
