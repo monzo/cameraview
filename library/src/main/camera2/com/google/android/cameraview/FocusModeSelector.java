@@ -20,11 +20,10 @@ final class FocusModeSelector {
         @SuppressWarnings("ConstantConditions")
         int hardwareLevel = cameraCharacteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
         boolean isLegacyHardware = hardwareLevel == CameraMetadata.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY;
-        boolean isSamsung = Build.MANUFACTURER.equalsIgnoreCase("Samsung");
         for (int mode : mPreferredAfModes) {
-            // Skip continues AF, Samsung device with legacy hardware will usually not work with continuous picture.
-            // e.g. Samsung S5
-            if (mode == CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE && isLegacyHardware && isSamsung) {
+            // Skip continuous AF, since some devices with legacy hardware will not work with continuous picture.
+            // e.g. Samsung S5, Motorola Moto G
+            if (mode == CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE && isLegacyHardware) {
                 continue;
             }
             if (arrayOfIntContains(supportedModes, mode)) {
