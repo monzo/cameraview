@@ -428,8 +428,8 @@ class Camera2 extends CameraViewImpl {
     @Override
     boolean setPreferredAspectRatios(AspectRatio[] ratios) {
         mPreferredRatios = ratios;
-        AspectRatio newAspectRatio = chooseBestAspectRatio();
 
+        AspectRatio newAspectRatio = chooseBestAspectRatio();
         if (newAspectRatio == null || newAspectRatio.equals(mAspectRatio)) {
             return false;
         }
@@ -653,16 +653,22 @@ class Camera2 extends CameraViewImpl {
      */
     @Nullable
     private AspectRatio chooseBestAspectRatio() {
-        if (mPreviewSizes == null || mPreviewSizes.ratios().isEmpty()) {
+        if (mCameraCharacteristics == null || mPreviewSizes == null || mPreviewSizes.ratios().isEmpty()) {
             return null;
         }
+
+        int cameraOrientation = getCameraOrientation();
+        boolean shouldInvertRatios = cameraOrientation == 90 || cameraOrientation == 180;
         for (AspectRatio ratio : mPreferredRatios) {
-            if (mPreviewSizes.ratios().contains(ratio)) {
-                return ratio;
+            AspectRatio normalisedRatio = shouldInvertRatios ? ratio.inverse() : ratio;
+            if (mPreviewSizes.ratios().contains(normalisedRatio)) {
+                Log.d("CameraView", "Choosing aspect ratio of " + ratio);
+                return normalisedRatio;
             }
         }
 
         Size largest = mPreviewSizes.largest(mScreenOrientation);
+        Log.d("CameraView", "Choosing largest ratio for size  " + largest);
         return AspectRatio.of(largest.getWidth(), largest.getHeight());
     }
 
@@ -679,6 +685,7 @@ class Camera2 extends CameraViewImpl {
             mImageReader.close();
         }
         Size largest = mOutputSizes.sizes(mAspectRatio).last();
+        Log.d("CameraView", "Output size " + largest);
         mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
                                                ImageFormat.JPEG, /* maxImages */ 2);
         mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, null);
@@ -692,6 +699,7 @@ class Camera2 extends CameraViewImpl {
         }
 
         Size videoSize = chooseVideoSize(mMinVideoWidth, mMinVideoHeight);
+        Log.d("CameraView", "Video output chosen " + videoSize);
 
         mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
         mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
@@ -732,6 +740,7 @@ class Camera2 extends CameraViewImpl {
         }
         try {
             Size previewSize = chooseOptimalSize();
+            Log.d("CameraView", "Preview size chosen" + previewSize);
             mSurfaceInfo.surface.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
             Surface surface = new Surface(mSurfaceInfo.surface);
             List<Surface> outputs = new ArrayList<>();
