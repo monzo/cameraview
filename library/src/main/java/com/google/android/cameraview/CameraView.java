@@ -108,10 +108,6 @@ public class CameraView extends FrameLayout {
         setVideoFrameRate(a.getInt(R.styleable.CameraView_videoFrameRate, 30));
         setMinVideoWidth(a.getInt(R.styleable.CameraView_minVideoWidth, 0));
         setMinVideoHeight(a.getInt(R.styleable.CameraView_minVideoHeight, 0));
-        String ratios = a.getString(R.styleable.CameraView_preferredAspectRatios);
-        if (ratios != null) {
-            setPreferredAspectRatio(parseAspectRatios(ratios));
-        }
         setAutoFocus(a.getBoolean(R.styleable.CameraView_autoFocus, true));
         setFlash(a.getInt(R.styleable.CameraView_flash, Constants.FLASH_AUTO));
         a.recycle();
@@ -124,15 +120,15 @@ public class CameraView extends FrameLayout {
         };
     }
 
-    private AspectRatio[] parseAspectRatios(@NonNull String ratiosInput) {
-        String[] ratioStrings = ratiosInput.split("\\|");
-        List<AspectRatio> aspectRatios = new ArrayList<>(ratioStrings.length);
-        for (String ratio : ratioStrings) {
-            aspectRatios.add(AspectRatio.parse(ratio.trim()));
-        }
-        AspectRatio[] result = new AspectRatio[aspectRatios.size()];
-        return aspectRatios.toArray(result);
-    }
+//    private AspectRatio[] parseAspectRatios(@NonNull String ratiosInput) {
+//        String[] ratioStrings = ratiosInput.split("\\|");
+//        List<AspectRatio> aspectRatios = new ArrayList<>(ratioStrings.length);
+//        for (String ratio : ratioStrings) {
+//            aspectRatios.add(AspectRatio.parse(ratio.trim()));
+//        }
+//        AspectRatio[] result = new AspectRatio[aspectRatios.size()];
+//        return aspectRatios.toArray(result);
+//    }
 
     @Override
     protected void onAttachedToWindow() {
@@ -149,68 +145,67 @@ public class CameraView extends FrameLayout {
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         // Handle android:adjustViewBounds
-        if (mAdjustViewBounds) {
-            if (!isCameraOpened()) {
-                mCallbacks.reserveRequestLayoutOnOpen();
-                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-                return;
-            }
-            final int widthMode = MeasureSpec.getMode(widthMeasureSpec);
-            final int heightMode = MeasureSpec.getMode(heightMeasureSpec);
-            if (widthMode == MeasureSpec.EXACTLY && heightMode != MeasureSpec.EXACTLY) {
-                final AspectRatio ratio = getAspectRatio();
-                assert ratio != null;
-                int height = (int) (MeasureSpec.getSize(widthMeasureSpec) * ratio.toFloat());
-                if (heightMode == MeasureSpec.AT_MOST) {
-                    height = Math.min(height, MeasureSpec.getSize(heightMeasureSpec));
-                }
-                super.onMeasure(widthMeasureSpec,
-                        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
-            } else if (widthMode != MeasureSpec.EXACTLY && heightMode == MeasureSpec.EXACTLY) {
-                final AspectRatio ratio = getAspectRatio();
-                assert ratio != null;
-                int width = (int) (MeasureSpec.getSize(heightMeasureSpec) * ratio.toFloat());
-                if (widthMode == MeasureSpec.AT_MOST) {
-                    width = Math.min(width, MeasureSpec.getSize(widthMeasureSpec));
-                }
-                super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-                        heightMeasureSpec);
-            } else {
-                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-            }
-        } else {
-            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        }
-        // Measure the TextureView
-        int width = getMeasuredWidth();
-        int height = getMeasuredHeight();
-        AspectRatio ratio = getAspectRatio();
-        if (ratio == null) {
-            return;
-        }
-
-        if (mDisplayOrientationDetector.getLastKnownDisplayOrientation() % 180 == 0) {
-            ratio = ratio.inverse();
-        }
-
-        if (height < width * ratio.getY() / ratio.getX()) {
-            mTextureView.measure(
-                    MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-                    MeasureSpec.makeMeasureSpec(width * ratio.getY() / ratio.getX(),
-                            MeasureSpec.EXACTLY));
-        } else {
-            mTextureView.measure(
-                    MeasureSpec.makeMeasureSpec(height * ratio.getX() / ratio.getY(),
-                            MeasureSpec.EXACTLY),
-                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
-        }
+//        if (mAdjustViewBounds) {
+//            if (!isCameraOpened()) {
+//                mCallbacks.reserveRequestLayoutOnOpen();
+//                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+//                return;
+//            }
+//            final int widthMode = MeasureSpec.getMode(widthMeasureSpec);
+//            final int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+//            if (widthMode == MeasureSpec.EXACTLY && heightMode != MeasureSpec.EXACTLY) {
+//                final AspectRatio ratio = getAspectRatio();
+//                assert ratio != null;
+//                int height = (int) (MeasureSpec.getSize(widthMeasureSpec) * ratio.toFloat());
+//                if (heightMode == MeasureSpec.AT_MOST) {
+//                    height = Math.min(height, MeasureSpec.getSize(heightMeasureSpec));
+//                }
+//                super.onMeasure(widthMeasureSpec,
+//                        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+//            } else if (widthMode != MeasureSpec.EXACTLY && heightMode == MeasureSpec.EXACTLY) {
+//                final AspectRatio ratio = getAspectRatio();
+//                assert ratio != null;
+//                int width = (int) (MeasureSpec.getSize(heightMeasureSpec) * ratio.toFloat());
+//                if (widthMode == MeasureSpec.AT_MOST) {
+//                    width = Math.min(width, MeasureSpec.getSize(widthMeasureSpec));
+//                }
+//                super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+//                        heightMeasureSpec);
+//            } else {
+//                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+//            }
+//        } else {
+//            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+//        }
+//        // Measure the TextureView
+//        int width = getMeasuredWidth();
+//        int height = getMeasuredHeight();
+//        AspectRatio ratio = getAspectRatio();
+//        if (ratio == null) {
+//            return;
+//        }
+//
+//        if (mDisplayOrientationDetector.getLastKnownDisplayOrientation() % 180 == 0) {
+//            ratio = ratio.inverse();
+//        }
+//
+//        if (height < width * ratio.getY() / ratio.getX()) {
+//            mTextureView.measure(
+//                    MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+//                    MeasureSpec.makeMeasureSpec(width * ratio.getY() / ratio.getX(),
+//                            MeasureSpec.EXACTLY));
+//        } else {
+//            mTextureView.measure(
+//                    MeasureSpec.makeMeasureSpec(height * ratio.getX() / ratio.getY(),
+//                            MeasureSpec.EXACTLY),
+//                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+//        }
     }
 
     @Override
     protected Parcelable onSaveInstanceState() {
         SavedState state = new SavedState(super.onSaveInstanceState());
         state.facing = getFacing();
-        state.preferredRatios = getPreferredAspectRatios();
         state.autoFocus = getAutoFocus();
         state.flash = getFlash();
         return state;
@@ -225,7 +220,6 @@ public class CameraView extends FrameLayout {
         SavedState ss = (SavedState) state;
         super.onRestoreInstanceState(ss.getSuperState());
         setFacing(ss.facing);
-        setPreferredAspectRatio(ss.preferredRatios);
         setAutoFocus(ss.autoFocus);
         setFlash(ss.flash);
     }
@@ -399,37 +393,6 @@ public class CameraView extends FrameLayout {
     }
 
     /**
-     * Sets the preferred aspect ratios for the camera output.
-     * The first ratio in the array will be set if the camera supports it, if not the second will
-     * be picked and so on. If none of the ratios in the list is supported or the list is empty,
-     * the CameraView will fallback to the ratio of the largest picture size available that matches
-     * the screen orientation.
-     *
-     * @param aspectRatios An array of {@link AspectRatio} ordered by preference
-     */
-    public void setPreferredAspectRatio(AspectRatio[] aspectRatios) {
-        if (mImpl.setPreferredAspectRatios(aspectRatios)) {
-            requestLayout();
-        }
-    }
-
-    public AspectRatio[] getPreferredAspectRatios() {
-        return mImpl.getPreferredAspectRatios();
-    }
-
-    /**
-     * Gets the current aspect ratio of camera.
-     * This ratio is chosen based on the preferred ratios and the ratios supported by the camera.
-     * There is no guarantee that is one of the preferred aspect ratios
-     *
-     * @return The current {@link AspectRatio}. Can be {@code null} if no camera is opened yet.
-     */
-    @Nullable
-    public AspectRatio getAspectRatio() {
-        return mImpl.getAspectRatio();
-    }
-
-    /**
      * Enables or disables the continuous auto-focus mode. When the current camera doesn't support
      * auto-focus, calling this method will be ignored.
      *
@@ -555,8 +518,6 @@ public class CameraView extends FrameLayout {
         @Facing
         int facing;
 
-        AspectRatio[] preferredRatios;
-
         boolean autoFocus;
 
         @Flash
@@ -566,7 +527,6 @@ public class CameraView extends FrameLayout {
         public SavedState(Parcel source, ClassLoader loader) {
             super(source);
             facing = source.readInt();
-            preferredRatios = source.createTypedArray(AspectRatio.CREATOR);
             autoFocus = source.readByte() != 0;
             flash = source.readInt();
         }
@@ -579,7 +539,6 @@ public class CameraView extends FrameLayout {
         public void writeToParcel(Parcel out, int flags) {
             super.writeToParcel(out, flags);
             out.writeInt(facing);
-            out.writeTypedArray(preferredRatios, 0);
             out.writeByte((byte) (autoFocus ? 1 : 0));
             out.writeInt(flash);
         }

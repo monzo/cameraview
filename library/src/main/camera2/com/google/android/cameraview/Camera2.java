@@ -48,7 +48,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -88,15 +87,15 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+            Log.d("CameraView", "onSurfaceTextureAvailable" + String.valueOf(width) + " " + String.valueOf(height));
             mSurfaceInfo.configure(surface, width, height);
-            configureTransform();
             startCaptureSession();
         }
 
         @Override
         public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+            Log.d("CameraView", "onSurfaceTextureSizeChanged" + String.valueOf(width) + " " + String.valueOf(height));
             mSurfaceInfo.configure(surface, width, height);
-            configureTransform();
             startCaptureSession();
         }
 
@@ -249,11 +248,11 @@ class Camera2 extends CameraViewImpl {
 
     private final SizeMap mPreviewSizes = new SizeMap();
 
+    @Nullable private Size mSelectPreviewSize = null;
+
     private final SizeMap mOutputSizes = new SizeMap();
 
     private int mFacing;
-
-    private AspectRatio mAspectRatio;
 
     private AspectRatio[] mPreferredRatios = new AspectRatio[0];
 
@@ -311,7 +310,6 @@ class Camera2 extends CameraViewImpl {
         startBackgroundThread();
         chooseCameraIdByFacing();
         collectCameraInfo();
-        prepareImageReader();
         startOpeningCamera();
     }
 
@@ -426,39 +424,6 @@ class Camera2 extends CameraViewImpl {
     }
 
     @Override
-    boolean setPreferredAspectRatios(AspectRatio[] ratios) {
-        mPreferredRatios = ratios;
-
-        AspectRatio newAspectRatio = chooseBestAspectRatio();
-        if (newAspectRatio == null || newAspectRatio.equals(mAspectRatio)) {
-            return false;
-        }
-
-        // Update image reader, recorder and capture session if there were already an active ones
-        if (mImageReader != null) {
-            prepareImageReader();
-        }
-        if (mCaptureSession != null) {
-            mCaptureSession.close();
-            mCaptureSession = null;
-            startCaptureSession();
-        }
-
-        return true;
-    }
-
-    @Override
-    AspectRatio[] getPreferredAspectRatios() {
-        return mPreferredRatios;
-    }
-
-    @Override
-    @Nullable
-    AspectRatio getAspectRatio() {
-        return mAspectRatio;
-    }
-
-    @Override
     void setScreenOrientation(int screenOrientation) {
         mScreenOrientation = screenOrientation;
     }
@@ -525,7 +490,9 @@ class Camera2 extends CameraViewImpl {
     @Override
     void setDisplayOrientation(int displayOrientation) {
         mDisplayOrientation = displayOrientation;
-        configureTransform();
+        if (mSelectPreviewSize != null) {
+            configureTransform(mSelectPreviewSize);
+        }
     }
 
     @Override
@@ -617,8 +584,7 @@ class Camera2 extends CameraViewImpl {
     /**
      * Collects some information from {@link #mCameraCharacteristics}.
      * <p>
-     * <p>This rewrites {@link #mPreviewSizes}, {@link #mOutputSizes}, and optionally,
-     * {@link #mAspectRatio}.</p>
+     * <p>This rewrites {@link #mPreviewSizes}, {@link #mOutputSizes}
      */
     private void collectCameraInfo() {
         StreamConfigurationMap map = mCameraCharacteristics.get(
@@ -641,35 +607,6 @@ class Camera2 extends CameraViewImpl {
                 mPreviewSizes.remove(ratio);
             }
         }
-
-        mAspectRatio = chooseBestAspectRatio();
-    }
-
-    /**
-     * @return the best supported aspect ratio based on the preferred ratios.
-     * If none of the preferred ratios are available, it chooses the ratio of the largest preview
-     * size that matches the screen orientation.
-     * It returns null if the list of preview sizes hasn't been collected yet
-     */
-    @Nullable
-    private AspectRatio chooseBestAspectRatio() {
-        if (mCameraCharacteristics == null || mPreviewSizes == null || mPreviewSizes.ratios().isEmpty()) {
-            return null;
-        }
-
-        int cameraOrientation = getCameraOrientation();
-        boolean shouldInvertRatios = cameraOrientation == 90 || cameraOrientation == 180;
-        for (AspectRatio ratio : mPreferredRatios) {
-            AspectRatio normalisedRatio = shouldInvertRatios ? ratio.inverse() : ratio;
-            if (mPreviewSizes.ratios().contains(normalisedRatio)) {
-                Log.d("CameraView", "Choosing aspect ratio of " + ratio);
-                return normalisedRatio;
-            }
-        }
-
-        Size largest = mPreviewSizes.largest(mScreenOrientation);
-        Log.d("CameraView", "Choosing largest ratio for size  " + largest);
-        return AspectRatio.of(largest.getWidth(), largest.getHeight());
     }
 
     private void collectOutputSizes(StreamConfigurationMap map) {
@@ -680,11 +617,11 @@ class Camera2 extends CameraViewImpl {
         }
     }
 
-    private void prepareImageReader() {
+    private void prepareImageReader(AspectRatio aspectRatio) {
         if (mImageReader != null) {
             mImageReader.close();
         }
-        Size largest = mOutputSizes.sizes(mAspectRatio).last();
+        Size largest = mOutputSizes.sizes(aspectRatio).last();
         Log.d("CameraView", "Output size " + largest);
         mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
                                                ImageFormat.JPEG, /* maxImages */ 2);
@@ -735,13 +672,14 @@ class Camera2 extends CameraViewImpl {
      * <p>The result will be continuously processed in {@link #mSessionCallback}.</p>
      */
     private void startCaptureSession() {
-        if (!isCameraOpened() || mSurfaceInfo.surface == null || (!mVideoMode && mImageReader == null)) {
+        if (!isCameraOpened() || mSurfaceInfo.surface == null) {
             return;
         }
         try {
-            Size previewSize = chooseOptimalSize();
-            Log.d("CameraView", "Preview size chosen" + previewSize);
-            mSurfaceInfo.surface.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
+            mSelectPreviewSize = chooseOptimalSize();
+            configureTransform(mSelectPreviewSize);
+
+            mSurfaceInfo.surface.setDefaultBufferSize(mSelectPreviewSize.getWidth(), mSelectPreviewSize.getHeight());
             Surface surface = new Surface(mSurfaceInfo.surface);
             List<Surface> outputs = new ArrayList<>();
             outputs.add(surface);
@@ -754,7 +692,9 @@ class Camera2 extends CameraViewImpl {
             } else {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                 mPreviewRequestBuilder.addTarget(surface);
-                if (mImageReader != null) {
+                if (!mVideoMode) {
+                    AspectRatio previewRatio = AspectRatio.of(mSelectPreviewSize.getWidth(), mSelectPreviewSize.getHeight());
+                    prepareImageReader(previewRatio);
                     outputs.add(mImageReader.getSurface());
                 }
             }
@@ -765,25 +705,27 @@ class Camera2 extends CameraViewImpl {
     }
 
     private Size chooseVideoSize(int width, int height) {
-        SortedSet<Size> bestSizes = mOutputSizes.sizes(mAspectRatio);
-        List<Size> bigEnough = new ArrayList<>();
-        for (Size option : bestSizes) {
-            if (option.getWidth() >= width && option.getHeight() >= height) {
-                bigEnough.add(option);
-            }
-        }
-
-        if (bigEnough.size() > 0) {
-            return Collections.min(bigEnough, new Comparator<Size>() {
-                @Override
-                public int compare(Size size1, Size size2) {
-                    return Long.compare(size1.getArea(), size2.getArea());
-                }
-            });
-        } else {
-            Log.e(TAG, "Couldn't find any suitable video recording size");
-            return bestSizes.last();
-        }
+        // TODO rewrite
+        return mOutputSizes.largest();
+//        SortedSet<Size> bestSizes = mOutputSizes.sizes();
+//        List<Size> bigEnough = new ArrayList<>();
+//        for (Size option : bestSizes) {
+//            if (option.getWidth() >= width && option.getHeight() >= height) {
+//                bigEnough.add(option);
+//            }
+//        }
+//
+//        if (bigEnough.size() > 0) {
+//            return Collections.min(bigEnough, new Comparator<Size>() {
+//                @Override
+//                public int compare(Size size1, Size size2) {
+//                    return Long.compare(size1.getArea(), size2.getArea());
+//                }
+//            });
+//        } else {
+//            Log.e(TAG, "Couldn't find any suitable video recording size");
+//            return bestSizes.last();
+//        }
     }
 
     /**
@@ -792,32 +734,52 @@ class Camera2 extends CameraViewImpl {
      * @return The picked size for camera preview.
      */
     private Size chooseOptimalSize() {
-        int surfaceLonger, surfaceShorter;
-        if (mSurfaceInfo.width < mSurfaceInfo.height) {
-            surfaceLonger = mSurfaceInfo.height;
-            surfaceShorter = mSurfaceInfo.width;
-        } else {
-            surfaceLonger = mSurfaceInfo.width;
-            surfaceShorter = mSurfaceInfo.height;
+        int surfaceWidth = mSurfaceInfo.width;
+        int surfaceHeight = mSurfaceInfo.height;
+        int cameraOrientation = getCameraOrientation();
+        // Flip with height around depending on camera orientation
+        if (cameraOrientation == 90 || cameraOrientation == 270) {
+            Log.e("CameraView", "Flipping surface width and height because camera orientation is 90 or 270");
+            surfaceWidth = mSurfaceInfo.height;
+            surfaceHeight = mSurfaceInfo.width;
         }
-        SortedSet<Size> candidates = mPreviewSizes.sizes(mAspectRatio);
-        // Pick the smallest of those big enough.
-        for (Size size : candidates) {
-            if (size.getWidth() >= surfaceLonger && size.getHeight() >= surfaceShorter) {
+
+        AspectRatio surfaceRatio = AspectRatio.of(surfaceWidth, surfaceHeight);
+
+        List<Size> bigEnough = new ArrayList<>();
+        List<AspectRatio> ratiosSorted = mPreviewSizes.ratiosSortedByClosest(surfaceRatio);
+
+        for (AspectRatio ratio : ratiosSorted) {
+            Log.d("CameraView", "Choosing optimal size, trying with ratio " + ratio + ", surface ratio is " + surfaceRatio);
+            for (Size size : mPreviewSizes.sizes(ratio)) {
+                if (size.getWidth() >= surfaceWidth && size.getHeight() >= surfaceHeight) {
+                    bigEnough.add(size);
+                }
+            }
+
+            if (!bigEnough.isEmpty()) {
+                Size size = Collections.min(bigEnough);
+                Log.d("CameraView", "Selected preview size " + size + " with ratio " + ratio);
                 return size;
             }
+
+            Log.d("CameraView", "Not preview size available for ratio " + ratio);
         }
-        // If no size is big enough, pick the largest one.
-        return candidates.last();
+
+        Log.e("CameraView", "Not big enough preview size found for surface");
+        // TODO maybe we can improve this scenario
+        return mPreviewSizes.largest();
     }
+
 
     /**
      * Configures the transform matrix for TextureView based on {@link #mDisplayOrientation} and
      * {@link #mSurfaceInfo}.
      */
-    private void configureTransform() {
+    private void configureTransform(Size previewSize) {
         Matrix matrix = new Matrix();
-        if (mDisplayOrientation % 180 == 90) {
+        boolean isLandscape = mDisplayOrientation % 180 == 90;
+        if (isLandscape) {
             // Rotate the camera preview when the screen is landscape.
             matrix.setPolyToPoly(
                     new float[]{
@@ -844,6 +806,32 @@ class Camera2 extends CameraViewImpl {
                             }, 0,
                     4);
         }
+
+        // If the aspect ratio of the TextureView surface doesn't match the ratio, we need to crop the surface view
+        // so that the preview doesn't look stretched or squashed.
+        int previewWidth = previewSize.getWidth();
+        int previewHeight = previewSize.getHeight();
+        int cameraOrientation = getCameraOrientation();
+        if (cameraOrientation == 270 || cameraOrientation == 90) {
+            previewWidth = previewSize.getHeight();
+            previewHeight = previewSize.getWidth();
+        }
+
+        float ratioSurface = (float) mSurfaceInfo.width / mSurfaceInfo.height;
+        float ratioPreview = (float) previewWidth / previewHeight;
+
+        float scaleX;
+        float scaleY;
+
+        if (ratioPreview < ratioSurface) {
+            scaleX = 1;
+            scaleY = (float) previewHeight / mSurfaceInfo.height;
+        } else {
+            scaleX = (float) previewWidth / mSurfaceInfo.width;
+            scaleY = 1;
+        }
+        matrix.setScale(scaleX, scaleY);
+
         mCallback.onTransformUpdated(matrix);
     }
 

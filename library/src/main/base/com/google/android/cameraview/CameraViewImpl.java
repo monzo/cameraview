@@ -62,15 +62,6 @@ abstract class CameraViewImpl {
     abstract Set<AspectRatio> getSupportedAspectRatios();
 
     /**
-     * @return {@code true} if the aspect ratio was changed.
-     */
-    abstract boolean setPreferredAspectRatios(AspectRatio[] ratios);
-
-    abstract AspectRatio[] getPreferredAspectRatios();
-
-    abstract AspectRatio getAspectRatio();
-
-    /**
      * Overall orientation of the screen. May be one of
      * {@link android.content.res.Configuration#ORIENTATION_LANDSCAPE},
      * {@link android.content.res.Configuration#ORIENTATION_PORTRAIT}.
