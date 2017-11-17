@@ -42,6 +42,7 @@ android {
 dependencies {
     implementation "com.android.support:support-annotations:$supportLibraryVersion"
     implementation "com.android.support:support-v4:$supportLibraryVersion"
+    implementation 'com.jakewharton.timber:timber:4.5.1'
 
     // Tests
     testImplementation 'junit:junit:4.12'

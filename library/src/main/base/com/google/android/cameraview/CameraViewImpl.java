@@ -61,13 +61,6 @@ abstract class CameraViewImpl {
 
     abstract Set<AspectRatio> getSupportedAspectRatios();
 
-    /**
-     * Overall orientation of the screen. May be one of
-     * {@link android.content.res.Configuration#ORIENTATION_LANDSCAPE},
-     * {@link android.content.res.Configuration#ORIENTATION_PORTRAIT}.
-     */
-    abstract void setScreenOrientation(int screenOrientation);
-
     abstract void setAutoFocus(boolean autoFocus);
 
     abstract boolean getAutoFocus();

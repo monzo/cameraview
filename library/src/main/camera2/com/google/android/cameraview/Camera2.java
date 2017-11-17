@@ -18,7 +18,6 @@ package com.google.android.cameraview;
 
 import android.annotation.TargetApi;
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
@@ -54,13 +53,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
 
+import timber.log.Timber;
+
 
 @SuppressWarnings("MissingPermission")
-@TargetApi(Build.VERSION_CODES.LOLLIPOP)
-class Camera2 extends CameraViewImpl {
-
-    private static final String TAG = "Camera2";
-
+@TargetApi(Build.VERSION_CODES.LOLLIPOP) class Camera2 extends CameraViewImpl {
     private static final SparseIntArray INTERNAL_FACINGS = new SparseIntArray();
 
     static {
@@ -87,14 +84,14 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-            Log.d("CameraView", "onSurfaceTextureAvailable" + String.valueOf(width) + " " + String.valueOf(height));
+            Timber.d("Surface texture available, size %dx%d ", width, height);
             mSurfaceInfo.configure(surface, width, height);
             startCaptureSession();
         }
 
         @Override
         public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-            Log.d("CameraView", "onSurfaceTextureSizeChanged" + String.valueOf(width) + " " + String.valueOf(height));
+            Timber.d("Surface texture size changed, new size %dx%d ", width, height);
             mSurfaceInfo.configure(surface, width, height);
             startCaptureSession();
         }
@@ -134,7 +131,7 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onError(@NonNull CameraDevice camera, int error) {
-            Log.e(TAG, "onError: " + camera.getId() + " (" + error + ")");
+            Timber.e("onError: cameraId: %s error: %d", camera.getId(), error);
             camera.close();
             mCamera = null;
         }
@@ -164,7 +161,7 @@ class Camera2 extends CameraViewImpl {
                     try {
                         mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), mCaptureCallback, null);
                     } catch (CameraAccessException | IllegalStateException e) {
-                        Log.e(TAG, "Failed to start camera preview.", e);
+                        Timber.e(e, "Failed to start camera preview.");
                     }
                 }
             });
@@ -172,7 +169,7 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onConfigureFailed(@NonNull CameraCaptureSession session) {
-            Log.e(TAG, "Failed to configure capture session.");
+            Timber.e("Failed to configure capture session.");
         }
 
         @Override
@@ -196,7 +193,7 @@ class Camera2 extends CameraViewImpl {
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
                                            CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_IDLE);
             } catch (CameraAccessException e) {
-                Log.e(TAG, "Failed to run precapture sequence.", e);
+                Timber.e(e, "Failed to run precapture sequence.");
             }
         }
 
@@ -282,9 +279,7 @@ class Camera2 extends CameraViewImpl {
 
     private boolean mVideoMode = true;
 
-    private int mScreenOrientation = Configuration.ORIENTATION_PORTRAIT;
-
-    public Camera2(Callback callback, Context context) {
+    Camera2(Callback callback, Context context) {
         super(callback);
         mCameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
     }
@@ -423,10 +418,6 @@ class Camera2 extends CameraViewImpl {
         return mPreviewSizes.ratios();
     }
 
-    @Override
-    void setScreenOrientation(int screenOrientation) {
-        mScreenOrientation = screenOrientation;
-    }
 
     @Override
     void setAutoFocus(boolean autoFocus) {
@@ -518,7 +509,7 @@ class Camera2 extends CameraViewImpl {
             mRecording = false;
             mMediaRecorder.stop();
         } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to stop video recording.", e);
+            Timber.e(e, "Failed to stop video recording.");
             //noinspection ResultOfMethodCallIgnored
             new File(mVideoFilePath).delete();
         } finally {
@@ -622,9 +613,8 @@ class Camera2 extends CameraViewImpl {
             mImageReader.close();
         }
         Size largest = mOutputSizes.sizes(aspectRatio).last();
-        Log.d("CameraView", "Output size " + largest);
-        mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
-                                               ImageFormat.JPEG, /* maxImages */ 2);
+        Timber.d("Image output size selected: %s, ratio: %s", largest, largest.getAspectRatio());
+        mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(), ImageFormat.JPEG, 2);
         mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, null);
     }
 
@@ -635,8 +625,9 @@ class Camera2 extends CameraViewImpl {
             mMediaRecorder.reset();
         }
 
-        Size videoSize = chooseVideoSize(mMinVideoWidth, mMinVideoHeight);
-        Log.d("CameraView", "Video output chosen " + videoSize);
+        Size minVideoSize = new Size(mMinVideoWidth, mMinVideoHeight);
+        Size videoSize = chooseVideoSize(minVideoSize, mSelectPreviewSize);
+        Timber.d("Video output size selected: %s, ratio: %s ", videoSize, videoSize.getAspectRatio());
 
         mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
         mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
@@ -704,28 +695,28 @@ class Camera2 extends CameraViewImpl {
         }
     }
 
-    private Size chooseVideoSize(int width, int height) {
-        // TODO rewrite
-        return mOutputSizes.largest();
-//        SortedSet<Size> bestSizes = mOutputSizes.sizes();
-//        List<Size> bigEnough = new ArrayList<>();
-//        for (Size option : bestSizes) {
-//            if (option.getWidth() >= width && option.getHeight() >= height) {
-//                bigEnough.add(option);
-//            }
-//        }
-//
-//        if (bigEnough.size() > 0) {
-//            return Collections.min(bigEnough, new Comparator<Size>() {
-//                @Override
-//                public int compare(Size size1, Size size2) {
-//                    return Long.compare(size1.getArea(), size2.getArea());
-//                }
-//            });
-//        } else {
-//            Log.e(TAG, "Couldn't find any suitable video recording size");
-//            return bestSizes.last();
-//        }
+    private Size chooseVideoSize(Size minVideoSize, Size currentPreviewSize) {
+        SortedSet<Size> bestSizes = mOutputSizes.sizes(currentPreviewSize.getAspectRatio());
+        List<Size> bigEnough = new ArrayList<>();
+        for (Size option : bestSizes) {
+            if (option.getWidth() >= minVideoSize.getWidth() && option.getHeight() >= minVideoSize.getHeight()) {
+                bigEnough.add(option);
+            }
+        }
+
+        if (bigEnough.size() > 0) {
+            return Collections.min(bigEnough, new Comparator<Size>() {
+                @Override
+                public int compare(Size size1, Size size2) {
+                    return Long.compare(size1.getArea(), size2.getArea());
+                }
+            });
+        } else {
+            Size fallback = bestSizes.last();
+            Timber.e("Couldn't find any suitable video recording size - falling back to %s with ratio %s",
+                     fallback, fallback.getAspectRatio());
+            return fallback;
+        }
     }
 
     /**
@@ -739,7 +730,7 @@ class Camera2 extends CameraViewImpl {
         int cameraOrientation = getCameraOrientation();
         // Flip with height around depending on camera orientation
         if (cameraOrientation == 90 || cameraOrientation == 270) {
-            Log.e("CameraView", "Flipping surface width and height because camera orientation is 90 or 270");
+            Timber.d("Flipping surface width and height because camera orientation is 90 or 270");
             surfaceWidth = mSurfaceInfo.height;
             surfaceHeight = mSurfaceInfo.width;
         }
@@ -750,7 +741,7 @@ class Camera2 extends CameraViewImpl {
         List<AspectRatio> ratiosSorted = mPreviewSizes.ratiosSortedByClosest(surfaceRatio);
 
         for (AspectRatio ratio : ratiosSorted) {
-            Log.d("CameraView", "Choosing optimal size, trying with ratio " + ratio + ", surface ratio is " + surfaceRatio);
+            Timber.d("Choosing optimal size, trying with ratio %s, surface ratio is %s", ratio, surfaceRatio);
             for (Size size : mPreviewSizes.sizes(ratio)) {
                 if (size.getWidth() >= surfaceWidth && size.getHeight() >= surfaceHeight) {
                     bigEnough.add(size);
@@ -759,16 +750,16 @@ class Camera2 extends CameraViewImpl {
 
             if (!bigEnough.isEmpty()) {
                 Size size = Collections.min(bigEnough);
-                Log.d("CameraView", "Selected preview size " + size + " with ratio " + ratio);
+                Timber.d("Selected preview size %s with ratio %s", size, ratio);
                 return size;
             }
 
-            Log.d("CameraView", "Not preview size available for ratio " + ratio);
+            Timber.d("Not preview size available for ratio " + ratio);
         }
 
-        Log.e("CameraView", "Not big enough preview size found for surface");
-        // TODO maybe we can improve this scenario
-        return mPreviewSizes.largest();
+        Size largest = mPreviewSizes.largest();
+        Timber.e("Not big enough preview size found for surface, selecting largest available %s", largest);
+        return largest;
     }
 
 
@@ -832,6 +823,11 @@ class Camera2 extends CameraViewImpl {
         }
         matrix.setScale(scaleX, scaleY);
 
+        // If we scaled we also have to translate so that the preview is centered
+        float translateX = scaleX != 1 ? (((mSurfaceInfo.width * scaleX) - mSurfaceInfo.width) / 2) * -1 : 0;
+        float translateY = scaleY != 1 ? (((mSurfaceInfo.height * scaleY) - mSurfaceInfo.height) / 2) * -1 : 0;
+        matrix.postTranslate(translateX, translateY);
+
         mCallback.onTransformUpdated(matrix);
     }
 
@@ -894,7 +890,7 @@ class Camera2 extends CameraViewImpl {
             mCaptureCallback.setState(PictureCaptureCallback.STATE_LOCKING);
             mCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback, null);
         } catch (CameraAccessException e) {
-            Log.e(TAG, "Failed to lock focus.", e);
+            Timber.e(e, "Failed to lock focus.");
         }
     }
 
@@ -948,7 +944,7 @@ class Camera2 extends CameraViewImpl {
                                         }
                                     }, null);
         } catch (CameraAccessException e) {
-            Log.e(TAG, "Cannot capture a still picture.", e);
+            Timber.e(e, "Cannot capture a still picture.");
         }
     }
 
@@ -976,7 +972,7 @@ class Camera2 extends CameraViewImpl {
                                                 null);
             mCaptureCallback.setState(PictureCaptureCallback.STATE_PREVIEW);
         } catch (CameraAccessException e) {
-            Log.e(TAG, "Failed to restart camera preview.", e);
+            Timber.e(e, "Failed to restart camera preview.");
         }
     }
 

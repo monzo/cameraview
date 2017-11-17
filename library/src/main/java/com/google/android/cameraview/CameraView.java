@@ -75,8 +75,6 @@ public class CameraView extends FrameLayout {
 
     private final CallbackBridge mCallbacks;
 
-    private boolean mAdjustViewBounds;
-
     private final TextureView mTextureView;
 
     private final DisplayOrientationDetector mDisplayOrientationDetector;
@@ -102,7 +100,6 @@ public class CameraView extends FrameLayout {
         // Attributes
         TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.CameraView, defStyleAttr,
                 R.style.Widget_CameraView);
-        mAdjustViewBounds = a.getBoolean(R.styleable.CameraView_android_adjustViewBounds, false);
         setFacing(a.getInt(R.styleable.CameraView_facing, FACING_BACK));
         setVideoEncodingBitRate(a.getInt(R.styleable.CameraView_videoEncodingBitRate, 5000000));
         setVideoFrameRate(a.getInt(R.styleable.CameraView_videoFrameRate, 30));
@@ -120,16 +117,6 @@ public class CameraView extends FrameLayout {
         };
     }
 
-//    private AspectRatio[] parseAspectRatios(@NonNull String ratiosInput) {
-//        String[] ratioStrings = ratiosInput.split("\\|");
-//        List<AspectRatio> aspectRatios = new ArrayList<>(ratioStrings.length);
-//        for (String ratio : ratioStrings) {
-//            aspectRatios.add(AspectRatio.parse(ratio.trim()));
-//        }
-//        AspectRatio[] result = new AspectRatio[aspectRatios.size()];
-//        return aspectRatios.toArray(result);
-//    }
-
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -140,66 +127,6 @@ public class CameraView extends FrameLayout {
     protected void onDetachedFromWindow() {
         mDisplayOrientationDetector.disable();
         super.onDetachedFromWindow();
-    }
-
-    @Override
-    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        // Handle android:adjustViewBounds
-//        if (mAdjustViewBounds) {
-//            if (!isCameraOpened()) {
-//                mCallbacks.reserveRequestLayoutOnOpen();
-//                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-//                return;
-//            }
-//            final int widthMode = MeasureSpec.getMode(widthMeasureSpec);
-//            final int heightMode = MeasureSpec.getMode(heightMeasureSpec);
-//            if (widthMode == MeasureSpec.EXACTLY && heightMode != MeasureSpec.EXACTLY) {
-//                final AspectRatio ratio = getAspectRatio();
-//                assert ratio != null;
-//                int height = (int) (MeasureSpec.getSize(widthMeasureSpec) * ratio.toFloat());
-//                if (heightMode == MeasureSpec.AT_MOST) {
-//                    height = Math.min(height, MeasureSpec.getSize(heightMeasureSpec));
-//                }
-//                super.onMeasure(widthMeasureSpec,
-//                        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
-//            } else if (widthMode != MeasureSpec.EXACTLY && heightMode == MeasureSpec.EXACTLY) {
-//                final AspectRatio ratio = getAspectRatio();
-//                assert ratio != null;
-//                int width = (int) (MeasureSpec.getSize(heightMeasureSpec) * ratio.toFloat());
-//                if (widthMode == MeasureSpec.AT_MOST) {
-//                    width = Math.min(width, MeasureSpec.getSize(widthMeasureSpec));
-//                }
-//                super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-//                        heightMeasureSpec);
-//            } else {
-//                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-//            }
-//        } else {
-//            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-//        }
-//        // Measure the TextureView
-//        int width = getMeasuredWidth();
-//        int height = getMeasuredHeight();
-//        AspectRatio ratio = getAspectRatio();
-//        if (ratio == null) {
-//            return;
-//        }
-//
-//        if (mDisplayOrientationDetector.getLastKnownDisplayOrientation() % 180 == 0) {
-//            ratio = ratio.inverse();
-//        }
-//
-//        if (height < width * ratio.getY() / ratio.getX()) {
-//            mTextureView.measure(
-//                    MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-//                    MeasureSpec.makeMeasureSpec(width * ratio.getY() / ratio.getX(),
-//                            MeasureSpec.EXACTLY));
-//        } else {
-//            mTextureView.measure(
-//                    MeasureSpec.makeMeasureSpec(height * ratio.getX() / ratio.getY(),
-//                            MeasureSpec.EXACTLY),
-//                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
-//        }
     }
 
     @Override
@@ -229,7 +156,6 @@ public class CameraView extends FrameLayout {
      * {@link Activity#onResume()}.
      */
     public void startPictureMode() {
-        mImpl.setScreenOrientation(getResources().getConfiguration().orientation);
         mImpl.startPictureMode();
     }
 
@@ -239,7 +165,6 @@ public class CameraView extends FrameLayout {
      * {@link Activity#onResume()}.
      */
     public void startVideoMode() {
-        mImpl.setScreenOrientation(getResources().getConfiguration().orientation);
         mImpl.startVideoMode();
     }
 
@@ -276,27 +201,6 @@ public class CameraView extends FrameLayout {
      */
     public void removeCallback(@NonNull Callback callback) {
         mCallbacks.remove(callback);
-    }
-
-    /**
-     * @param adjustViewBounds {@code true} if you want the CameraView to adjust its bounds to
-     *                         preserve the aspect ratio of camera.
-     * @see #getAdjustViewBounds()
-     */
-    public void setAdjustViewBounds(boolean adjustViewBounds) {
-        if (mAdjustViewBounds != adjustViewBounds) {
-            mAdjustViewBounds = adjustViewBounds;
-            requestLayout();
-        }
-    }
-
-    /**
-     * @return True when this CameraView is adjusting its bounds to preserve the aspect ratio of
-     * camera.
-     * @see #setAdjustViewBounds(boolean)
-     */
-    public boolean getAdjustViewBounds() {
-        return mAdjustViewBounds;
     }
 
     /**
