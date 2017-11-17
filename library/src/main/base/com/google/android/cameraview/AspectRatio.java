@@ -137,8 +137,6 @@ public class AspectRatio implements Comparable<AspectRatio>, Parcelable {
         return (float) mX / mY;
     }
 
-
-
     @Override
     public int hashCode() {
         // assuming most sizes are <2^16, doing a rotate will give us perfect hashing
