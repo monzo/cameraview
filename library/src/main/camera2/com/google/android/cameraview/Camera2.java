@@ -251,8 +251,6 @@ import timber.log.Timber;
 
     private int mFacing;
 
-    private AspectRatio[] mPreferredRatios = new AspectRatio[0];
-
     private boolean mAutoFocus;
 
     private int mFlash;
@@ -666,29 +664,32 @@ import timber.log.Timber;
         if (!isCameraOpened() || mSurfaceInfo.surface == null) {
             return;
         }
-        try {
-            mSelectPreviewSize = chooseOptimalSize();
+
+        Size optimalPreviewSize = chooseOptimalSize();
+        if (!optimalPreviewSize.equals(mSelectPreviewSize)) {
+            mSelectPreviewSize = optimalPreviewSize;
             configureTransform(mSelectPreviewSize);
+        }
+        mSurfaceInfo.surface.setDefaultBufferSize(mSelectPreviewSize.getWidth(), mSelectPreviewSize.getHeight());
 
-            mSurfaceInfo.surface.setDefaultBufferSize(mSelectPreviewSize.getWidth(), mSelectPreviewSize.getHeight());
-            Surface surface = new Surface(mSurfaceInfo.surface);
+        try {
             List<Surface> outputs = new ArrayList<>();
-            outputs.add(surface);
-
             if (mStartVideoRecording) {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
                 mPreviewRequestBuilder.addTarget(mMediaRecorder.getSurface());
-                mPreviewRequestBuilder.addTarget(surface);
                 outputs.add(mMediaRecorder.getSurface());
             } else {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-                mPreviewRequestBuilder.addTarget(surface);
                 if (!mVideoMode) {
-                    AspectRatio previewRatio = AspectRatio.of(mSelectPreviewSize.getWidth(), mSelectPreviewSize.getHeight());
-                    prepareImageReader(previewRatio);
+                    prepareImageReader(mSelectPreviewSize.getAspectRatio());
                     outputs.add(mImageReader.getSurface());
                 }
             }
+
+            Surface surface = new Surface(mSurfaceInfo.surface);
+            outputs.add(surface);
+            mPreviewRequestBuilder.addTarget(surface);
+
             mCamera.createCaptureSession(outputs, mSessionCallback, mBackgroundHandler);
         } catch (CameraAccessException e) {
             throw new RuntimeException("Failed to start capture session for mode " + (mVideoMode ? "video" : "picture"), e);
