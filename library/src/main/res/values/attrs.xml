@@ -13,11 +13,6 @@
 -->
 <resources>
     <declare-styleable name="CameraView">
-        <!--
-          Set this to true if you want the CameraView to adjust its bounds to preserve the aspect
-          ratio of its camera preview.
-        -->
-        <attr name="android:adjustViewBounds"/>
         <!-- Direction the camera faces relative to device screen. -->
         <attr name="facing" format="enum">
             <!-- The camera device faces the opposite direction as the device's screen. -->
@@ -25,10 +20,6 @@
             <!-- The camera device faces the same direction as the device's screen. -->
             <enum name="front" value="1"/>
         </attr>
-        <!--
-         Preferred aspect ratios for the camera separated by '|' and ordered by desc preference.
-         -->
-        <attr name="preferredAspectRatios" format="string"/>
         <!-- Continuous auto focus mode. -->
         <attr name="autoFocus" format="boolean"/>
         <!-- The flash mode. -->

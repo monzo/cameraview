@@ -45,6 +45,10 @@ public class Size implements Comparable<Size> {
         return mHeight;
     }
 
+    public AspectRatio getAspectRatio() {
+        return AspectRatio.of(mWidth, mHeight);
+    }
+
     public long getArea() {
         // We cast here to ensure the multiplications won't overflow
         return (long) mWidth * mHeight;

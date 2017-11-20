@@ -18,7 +18,6 @@ package com.google.android.cameraview;
 
 import android.annotation.TargetApi;
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
@@ -48,20 +47,17 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
 
+import timber.log.Timber;
+
 
 @SuppressWarnings("MissingPermission")
-@TargetApi(Build.VERSION_CODES.LOLLIPOP)
-class Camera2 extends CameraViewImpl {
-
-    private static final String TAG = "Camera2";
-
+@TargetApi(Build.VERSION_CODES.LOLLIPOP) class Camera2 extends CameraViewImpl {
     private static final SparseIntArray INTERNAL_FACINGS = new SparseIntArray();
 
     static {
@@ -88,15 +84,15 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+            Timber.d("Surface texture available, size %dx%d ", width, height);
             mSurfaceInfo.configure(surface, width, height);
-            configureTransform();
             startCaptureSession();
         }
 
         @Override
         public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+            Timber.d("Surface texture size changed, new size %dx%d ", width, height);
             mSurfaceInfo.configure(surface, width, height);
-            configureTransform();
             startCaptureSession();
         }
 
@@ -135,7 +131,7 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onError(@NonNull CameraDevice camera, int error) {
-            Log.e(TAG, "onError: " + camera.getId() + " (" + error + ")");
+            Timber.e("onError: cameraId: %s error: %d", camera.getId(), error);
             camera.close();
             mCamera = null;
         }
@@ -165,7 +161,7 @@ class Camera2 extends CameraViewImpl {
                     try {
                         mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), mCaptureCallback, null);
                     } catch (CameraAccessException | IllegalStateException e) {
-                        Log.e(TAG, "Failed to start camera preview.", e);
+                        Timber.e(e, "Failed to start camera preview.");
                     }
                 }
             });
@@ -173,7 +169,7 @@ class Camera2 extends CameraViewImpl {
 
         @Override
         public void onConfigureFailed(@NonNull CameraCaptureSession session) {
-            Log.e(TAG, "Failed to configure capture session.");
+            Timber.e("Failed to configure capture session.");
         }
 
         @Override
@@ -197,7 +193,7 @@ class Camera2 extends CameraViewImpl {
                 mPreviewRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
                                            CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_IDLE);
             } catch (CameraAccessException e) {
-                Log.e(TAG, "Failed to run precapture sequence.", e);
+                Timber.e(e, "Failed to run precapture sequence.");
             }
         }
 
@@ -249,13 +245,11 @@ class Camera2 extends CameraViewImpl {
 
     private final SizeMap mPreviewSizes = new SizeMap();
 
+    @Nullable private Size mSelectPreviewSize = null;
+
     private final SizeMap mOutputSizes = new SizeMap();
 
     private int mFacing;
-
-    private AspectRatio mAspectRatio;
-
-    private AspectRatio[] mPreferredRatios = new AspectRatio[0];
 
     private boolean mAutoFocus;
 
@@ -283,9 +277,7 @@ class Camera2 extends CameraViewImpl {
 
     private boolean mVideoMode = true;
 
-    private int mScreenOrientation = Configuration.ORIENTATION_PORTRAIT;
-
-    public Camera2(Callback callback, Context context) {
+    Camera2(Callback callback, Context context) {
         super(callback);
         mCameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
     }
@@ -311,7 +303,6 @@ class Camera2 extends CameraViewImpl {
         startBackgroundThread();
         chooseCameraIdByFacing();
         collectCameraInfo();
-        prepareImageReader();
         startOpeningCamera();
     }
 
@@ -425,43 +416,6 @@ class Camera2 extends CameraViewImpl {
         return mPreviewSizes.ratios();
     }
 
-    @Override
-    boolean setPreferredAspectRatios(AspectRatio[] ratios) {
-        mPreferredRatios = ratios;
-        AspectRatio newAspectRatio = chooseBestAspectRatio();
-
-        if (newAspectRatio == null || newAspectRatio.equals(mAspectRatio)) {
-            return false;
-        }
-
-        // Update image reader, recorder and capture session if there were already an active ones
-        if (mImageReader != null) {
-            prepareImageReader();
-        }
-        if (mCaptureSession != null) {
-            mCaptureSession.close();
-            mCaptureSession = null;
-            startCaptureSession();
-        }
-
-        return true;
-    }
-
-    @Override
-    AspectRatio[] getPreferredAspectRatios() {
-        return mPreferredRatios;
-    }
-
-    @Override
-    @Nullable
-    AspectRatio getAspectRatio() {
-        return mAspectRatio;
-    }
-
-    @Override
-    void setScreenOrientation(int screenOrientation) {
-        mScreenOrientation = screenOrientation;
-    }
 
     @Override
     void setAutoFocus(boolean autoFocus) {
@@ -525,7 +479,9 @@ class Camera2 extends CameraViewImpl {
     @Override
     void setDisplayOrientation(int displayOrientation) {
         mDisplayOrientation = displayOrientation;
-        configureTransform();
+        if (mSelectPreviewSize != null) {
+            configureTransform(mSelectPreviewSize);
+        }
     }
 
     @Override
@@ -551,7 +507,7 @@ class Camera2 extends CameraViewImpl {
             mRecording = false;
             mMediaRecorder.stop();
         } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to stop video recording.", e);
+            Timber.e(e, "Failed to stop video recording.");
             //noinspection ResultOfMethodCallIgnored
             new File(mVideoFilePath).delete();
         } finally {
@@ -617,8 +573,7 @@ class Camera2 extends CameraViewImpl {
     /**
      * Collects some information from {@link #mCameraCharacteristics}.
      * <p>
-     * <p>This rewrites {@link #mPreviewSizes}, {@link #mOutputSizes}, and optionally,
-     * {@link #mAspectRatio}.</p>
+     * <p>This rewrites {@link #mPreviewSizes}, {@link #mOutputSizes}
      */
     private void collectCameraInfo() {
         StreamConfigurationMap map = mCameraCharacteristics.get(
@@ -641,29 +596,6 @@ class Camera2 extends CameraViewImpl {
                 mPreviewSizes.remove(ratio);
             }
         }
-
-        mAspectRatio = chooseBestAspectRatio();
-    }
-
-    /**
-     * @return the best supported aspect ratio based on the preferred ratios.
-     * If none of the preferred ratios are available, it chooses the ratio of the largest preview
-     * size that matches the screen orientation.
-     * It returns null if the list of preview sizes hasn't been collected yet
-     */
-    @Nullable
-    private AspectRatio chooseBestAspectRatio() {
-        if (mPreviewSizes == null || mPreviewSizes.ratios().isEmpty()) {
-            return null;
-        }
-        for (AspectRatio ratio : mPreferredRatios) {
-            if (mPreviewSizes.ratios().contains(ratio)) {
-                return ratio;
-            }
-        }
-
-        Size largest = mPreviewSizes.largest(mScreenOrientation);
-        return AspectRatio.of(largest.getWidth(), largest.getHeight());
     }
 
     private void collectOutputSizes(StreamConfigurationMap map) {
@@ -674,13 +606,13 @@ class Camera2 extends CameraViewImpl {
         }
     }
 
-    private void prepareImageReader() {
+    private void prepareImageReader(AspectRatio aspectRatio) {
         if (mImageReader != null) {
             mImageReader.close();
         }
-        Size largest = mOutputSizes.sizes(mAspectRatio).last();
-        mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
-                                               ImageFormat.JPEG, /* maxImages */ 2);
+        Size largest = mOutputSizes.sizes(aspectRatio).last();
+        Timber.d("Image output size selected: %s, ratio: %s", largest, largest.getAspectRatio());
+        mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(), ImageFormat.JPEG, 2);
         mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, null);
     }
 
@@ -691,7 +623,9 @@ class Camera2 extends CameraViewImpl {
             mMediaRecorder.reset();
         }
 
-        Size videoSize = chooseVideoSize(mMinVideoWidth, mMinVideoHeight);
+        Size minVideoSize = new Size(mMinVideoWidth, mMinVideoHeight);
+        Size videoSize = chooseVideoSize(minVideoSize, mSelectPreviewSize);
+        Timber.d("Video output size selected: %s, ratio: %s ", videoSize, videoSize.getAspectRatio());
 
         mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
         mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
@@ -727,39 +661,46 @@ class Camera2 extends CameraViewImpl {
      * <p>The result will be continuously processed in {@link #mSessionCallback}.</p>
      */
     private void startCaptureSession() {
-        if (!isCameraOpened() || mSurfaceInfo.surface == null || (!mVideoMode && mImageReader == null)) {
+        if (!isCameraOpened() || mSurfaceInfo.surface == null) {
             return;
         }
-        try {
-            Size previewSize = chooseOptimalSize();
-            mSurfaceInfo.surface.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-            Surface surface = new Surface(mSurfaceInfo.surface);
-            List<Surface> outputs = new ArrayList<>();
-            outputs.add(surface);
 
+        Size optimalPreviewSize = chooseOptimalSize();
+        if (!optimalPreviewSize.equals(mSelectPreviewSize)) {
+            mSelectPreviewSize = optimalPreviewSize;
+            configureTransform(mSelectPreviewSize);
+        }
+        mSurfaceInfo.surface.setDefaultBufferSize(mSelectPreviewSize.getWidth(), mSelectPreviewSize.getHeight());
+
+        try {
+            List<Surface> outputs = new ArrayList<>();
             if (mStartVideoRecording) {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
                 mPreviewRequestBuilder.addTarget(mMediaRecorder.getSurface());
-                mPreviewRequestBuilder.addTarget(surface);
                 outputs.add(mMediaRecorder.getSurface());
             } else {
                 mPreviewRequestBuilder = mCamera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-                mPreviewRequestBuilder.addTarget(surface);
-                if (mImageReader != null) {
+                if (!mVideoMode) {
+                    prepareImageReader(mSelectPreviewSize.getAspectRatio());
                     outputs.add(mImageReader.getSurface());
                 }
             }
+
+            Surface surface = new Surface(mSurfaceInfo.surface);
+            outputs.add(surface);
+            mPreviewRequestBuilder.addTarget(surface);
+
             mCamera.createCaptureSession(outputs, mSessionCallback, mBackgroundHandler);
         } catch (CameraAccessException e) {
             throw new RuntimeException("Failed to start capture session for mode " + (mVideoMode ? "video" : "picture"), e);
         }
     }
 
-    private Size chooseVideoSize(int width, int height) {
-        SortedSet<Size> bestSizes = mOutputSizes.sizes(mAspectRatio);
+    private Size chooseVideoSize(Size minVideoSize, Size currentPreviewSize) {
+        SortedSet<Size> bestSizes = mOutputSizes.sizes(currentPreviewSize.getAspectRatio());
         List<Size> bigEnough = new ArrayList<>();
         for (Size option : bestSizes) {
-            if (option.getWidth() >= width && option.getHeight() >= height) {
+            if (option.getWidth() >= minVideoSize.getWidth() && option.getHeight() >= minVideoSize.getHeight()) {
                 bigEnough.add(option);
             }
         }
@@ -772,8 +713,10 @@ class Camera2 extends CameraViewImpl {
                 }
             });
         } else {
-            Log.e(TAG, "Couldn't find any suitable video recording size");
-            return bestSizes.last();
+            Size fallback = bestSizes.last();
+            Timber.e("Couldn't find any suitable video recording size - falling back to %s with ratio %s",
+                     fallback, fallback.getAspectRatio());
+            return fallback;
         }
     }
 
@@ -783,32 +726,52 @@ class Camera2 extends CameraViewImpl {
      * @return The picked size for camera preview.
      */
     private Size chooseOptimalSize() {
-        int surfaceLonger, surfaceShorter;
-        if (mSurfaceInfo.width < mSurfaceInfo.height) {
-            surfaceLonger = mSurfaceInfo.height;
-            surfaceShorter = mSurfaceInfo.width;
-        } else {
-            surfaceLonger = mSurfaceInfo.width;
-            surfaceShorter = mSurfaceInfo.height;
+        int surfaceWidth = mSurfaceInfo.width;
+        int surfaceHeight = mSurfaceInfo.height;
+        int cameraOrientation = getCameraOrientation();
+        // Flip with height around depending on camera orientation
+        if (cameraOrientation == 90 || cameraOrientation == 270) {
+            Timber.d("Flipping surface width and height because camera orientation is 90 or 270");
+            surfaceWidth = mSurfaceInfo.height;
+            surfaceHeight = mSurfaceInfo.width;
         }
-        SortedSet<Size> candidates = mPreviewSizes.sizes(mAspectRatio);
-        // Pick the smallest of those big enough.
-        for (Size size : candidates) {
-            if (size.getWidth() >= surfaceLonger && size.getHeight() >= surfaceShorter) {
+
+        AspectRatio surfaceRatio = AspectRatio.of(surfaceWidth, surfaceHeight);
+
+        List<Size> bigEnough = new ArrayList<>();
+        List<AspectRatio> ratiosSorted = mPreviewSizes.ratiosSortedByClosest(surfaceRatio);
+
+        for (AspectRatio ratio : ratiosSorted) {
+            Timber.d("Choosing optimal size, trying with ratio %s, surface ratio is %s", ratio, surfaceRatio);
+            for (Size size : mPreviewSizes.sizes(ratio)) {
+                if (size.getWidth() >= surfaceWidth && size.getHeight() >= surfaceHeight) {
+                    bigEnough.add(size);
+                }
+            }
+
+            if (!bigEnough.isEmpty()) {
+                Size size = Collections.min(bigEnough);
+                Timber.d("Selected preview size %s with ratio %s", size, ratio);
                 return size;
             }
+
+            Timber.d("Not preview size available for ratio " + ratio);
         }
-        // If no size is big enough, pick the largest one.
-        return candidates.last();
+
+        Size largest = mPreviewSizes.largest();
+        Timber.e("Not big enough preview size found for surface, selecting largest available %s", largest);
+        return largest;
     }
+
 
     /**
      * Configures the transform matrix for TextureView based on {@link #mDisplayOrientation} and
      * {@link #mSurfaceInfo}.
      */
-    private void configureTransform() {
+    private void configureTransform(Size previewSize) {
         Matrix matrix = new Matrix();
-        if (mDisplayOrientation % 180 == 90) {
+        boolean isLandscape = mDisplayOrientation % 180 == 90;
+        if (isLandscape) {
             // Rotate the camera preview when the screen is landscape.
             matrix.setPolyToPoly(
                     new float[]{
@@ -835,6 +798,37 @@ class Camera2 extends CameraViewImpl {
                             }, 0,
                     4);
         }
+
+        // If the aspect ratio of the TextureView surface doesn't match the ratio, we need to crop the surface view
+        // so that the preview doesn't look stretched or squashed.
+        int previewWidth = previewSize.getWidth();
+        int previewHeight = previewSize.getHeight();
+        int cameraOrientation = getCameraOrientation();
+        if (cameraOrientation == 270 || cameraOrientation == 90) {
+            previewWidth = previewSize.getHeight();
+            previewHeight = previewSize.getWidth();
+        }
+
+        float ratioSurface = (float) mSurfaceInfo.width / mSurfaceInfo.height;
+        float ratioPreview = (float) previewWidth / previewHeight;
+
+        float scaleX;
+        float scaleY;
+
+        if (ratioPreview < ratioSurface) {
+            scaleX = 1;
+            scaleY = (float) previewHeight / mSurfaceInfo.height;
+        } else {
+            scaleX = (float) previewWidth / mSurfaceInfo.width;
+            scaleY = 1;
+        }
+        matrix.setScale(scaleX, scaleY);
+
+        // If we scaled we also have to translate so that the preview is centered
+        float translateX = scaleX != 1 ? (((mSurfaceInfo.width * scaleX) - mSurfaceInfo.width) / 2) * -1 : 0;
+        float translateY = scaleY != 1 ? (((mSurfaceInfo.height * scaleY) - mSurfaceInfo.height) / 2) * -1 : 0;
+        matrix.postTranslate(translateX, translateY);
+
         mCallback.onTransformUpdated(matrix);
     }
 
@@ -897,7 +891,7 @@ class Camera2 extends CameraViewImpl {
             mCaptureCallback.setState(PictureCaptureCallback.STATE_LOCKING);
             mCaptureSession.capture(mPreviewRequestBuilder.build(), mCaptureCallback, null);
         } catch (CameraAccessException e) {
-            Log.e(TAG, "Failed to lock focus.", e);
+            Timber.e(e, "Failed to lock focus.");
         }
     }
 
@@ -951,7 +945,7 @@ class Camera2 extends CameraViewImpl {
                                         }
                                     }, null);
         } catch (CameraAccessException e) {
-            Log.e(TAG, "Cannot capture a still picture.", e);
+            Timber.e(e, "Cannot capture a still picture.");
         }
     }
 
@@ -979,7 +973,7 @@ class Camera2 extends CameraViewImpl {
                                                 null);
             mCaptureCallback.setState(PictureCaptureCallback.STATE_PREVIEW);
         } catch (CameraAccessException e) {
-            Log.e(TAG, "Failed to restart camera preview.", e);
+            Timber.e(e, "Failed to restart camera preview.");
         }
     }
 

@@ -21,8 +21,10 @@ import android.support.annotation.Nullable;
 import android.support.v4.util.ArrayMap;
 import android.support.v4.util.ArraySet;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -72,6 +74,22 @@ class SizeMap {
         return mRatios.keySet();
     }
 
+    List<AspectRatio> ratiosSortedByClosest(final AspectRatio aspectRatio) {
+        List<AspectRatio> aspectRatios = new ArrayList<>(ratios());
+        Collections.sort(aspectRatios, new Comparator<AspectRatio>() {
+            @Override public int compare(AspectRatio ratio1, AspectRatio ratio2) {
+                float aspectRatioValue = aspectRatio.toFloat();
+                float ratio1Value = ratio1.toFloat();
+                float ratio2Value = ratio2.toFloat();
+
+                float ratio1Diff = Math.abs(ratio1Value - aspectRatioValue);
+                float ratio2Diff = Math.abs(ratio2Value - aspectRatioValue);
+                return Float.compare(ratio1Diff, ratio2Diff);
+            }
+        });
+        return aspectRatios;
+    }
+
     SortedSet<Size> sizes(AspectRatio ratio) {
         if (mRatios.containsKey(ratio)) {
             return mRatios.get(ratio);
@@ -79,18 +97,12 @@ class SizeMap {
         return new TreeSet<>();
     }
 
-    Size largest(int preferredOrientation) {
+    Size largest() {
         Set<Size> preferredSizes = new ArraySet<>();
-        Set<Size> otherSizes = new ArraySet<>();
         for (AspectRatio ratio : mRatios.keySet()) {
-            if (ratio.matchesOrientation(preferredOrientation)) {
                 preferredSizes.addAll(mRatios.get(ratio));
-            } else {
-                otherSizes.addAll(mRatios.get(ratio));
-            }
         }
-
-        return Collections.max(!preferredSizes.isEmpty() ? preferredSizes : otherSizes, new CompareSizesByArea());
+        return Collections.max(preferredSizes, new CompareSizesByArea());
     }
 
     void clear() {
