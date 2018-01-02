@@ -13,7 +13,7 @@
 // limitations under the License.
 
 apply plugin: 'com.android.library'
-apply from: "$rootDir/dependencies.gradle"
+apply from: rootProject.dependenciesFile
 
 android {
     compileSdkVersion rootProject.ext.compileSdkVersion
